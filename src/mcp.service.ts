@@ -67,6 +67,9 @@ export class BianbuMcpService {
           if (parsed.result?.isError && parsed.result?.content?.[0]?.text) {
             throw new Error(parsed.result.content[0].text)
           }
+          if (parsed.result?.structuredContent !== undefined) {
+            return parsed.result.structuredContent
+          }
           return parsed.result
         }
       } catch (error) {
