@@ -1,0 +1,52 @@
+div(style='padding: 16px; display:flex; flex-direction:column; gap:16px; height:100%')
+  .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Bianbu Cloud Files
+    p(style='opacity:.8; margin-bottom:0')
+      | File-manager-like remote access over MCP. This behaves like an SFTP panel, but it is backed by MCP file tools instead of the native SFTP protocol.
+
+  .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08)')
+    .row(style='display:grid; grid-template-columns: 1fr auto auto; gap:12px; align-items:end')
+      .field
+        label(style='display:block; margin-bottom:6px') Current path
+        input.form-control(type='text', [(ngModel)]='currentPath', [disabled]='busy')
+      .field
+        label(style='display:block; margin-bottom:6px') Root
+        input(type='checkbox', [(ngModel)]='asRoot', [disabled]='busy')
+      .field(style='display:flex; gap:8px')
+        button.btn.btn-primary(type='button', (click)='refresh()', [disabled]='busy') Refresh
+        label.btn.btn-secondary(style='margin:0') Upload
+          input(type='file', style='display:none', (change)='uploadFile($event)', [disabled]='busy')
+    div(style='margin-top:12px; opacity:.75') {{ status }}
+
+  .row(style='display:grid; grid-template-columns: 420px 1fr; gap:16px; flex:1; min-height:0')
+    .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); overflow:auto')
+      div(style='display:grid; grid-template-columns: 1fr 1fr auto; gap:8px; margin-bottom:12px')
+        input.form-control(type='text', [(ngModel)]='newDirectoryName', placeholder='new-directory', [disabled]='busy')
+        input.form-control(type='text', [(ngModel)]='newFileName', placeholder='new-file.txt', [disabled]='busy')
+        div(style='display:flex; gap:8px')
+          button.btn.btn-secondary(type='button', (click)='createDirectory()', [disabled]='busy || !newDirectoryName.trim()') Mkdir
+          button.btn.btn-secondary(type='button', (click)='createFile()', [disabled]='busy || !newFileName.trim()') New file
+      table(style='width:100%; border-collapse:collapse')
+        thead
+          tr(style='text-align:left; opacity:.7')
+            th(style='padding:8px') Name
+            th(style='padding:8px') Type
+            th(style='padding:8px') Size
+            th(style='padding:8px')
+        tbody
+          tr(*ngFor='let item of items', style='border-top:1px solid rgba(255,255,255,0.08)')
+            td(style='padding:8px; cursor:pointer', (click)='openItem(item)') {{ item.path.split('/').pop() || item.path }}
+            td(style='padding:8px') {{ item.is_dir ? 'dir' : 'file' }}
+            td(style='padding:8px') {{ item.size }}
+            td(style='padding:8px; text-align:right')
+              button.btn.btn-sm.btn-outline-danger(type='button', (click)='deleteItem(item)', [disabled]='busy') Delete
+
+    .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; min-height:0')
+      div(style='display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:12px')
+        div
+          h4(style='margin:0') File preview
+          div(style='opacity:.7; font-size:.9em') {{ selectedPath || 'No file selected' }}
+        div(style='display:flex; gap:8px')
+          button.btn.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath') Download
+          button.btn.btn-primary(type='button', (click)='saveSelected()', [disabled]='busy || !selectedPath') Save
+      textarea.form-control(style='flex:1; min-height:320px', [(ngModel)]='selectedContent', [disabled]='busy || !selectedPath', placeholder='Select a text file to view or edit')

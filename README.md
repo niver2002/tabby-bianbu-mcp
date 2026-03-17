@@ -1,41 +1,58 @@
 # tabby-bianbu-mcp
 
-A Tabby plugin that adds a dedicated settings tab for storing a Bianbu Cloud MCP endpoint configuration.
+A Tabby plugin that adds polished Bianbu Cloud remote tabs backed by your MCP endpoint.
 
 What it provides:
-- a `Bianbu MCP` settings tab inside Tabby
-- fields for MCP URL and `X-API-KEY`
-- pacing / retry settings for unstable gateways
-- a generated copy-paste JSON snippet for MCP client configs
+- a dedicated `Bianbu MCP` settings page inside Tabby
+- a `Bianbu Cloud Shell` tab that behaves like a remote shell window
+- a `Bianbu Cloud Files` tab that behaves like a file-manager / SFTP-style window
+- connection fields for MCP URL, `X-API-KEY`, pacing, retries, and notes
+- quick actions and copyable config snippets
 
-## Status
+Important:
+- this plugin does **not** implement native SSH or native SFTP transport
+- instead, it uses your Bianbu Cloud MCP endpoint at `https://<domain>/mcp`
+- `Bianbu Cloud Shell` is backed by MCP `run_command`
+- `Bianbu Cloud Files` is backed by MCP file tools such as `list_directory`, `read_text_file`, `write_text_file`, `upload_binary_file`, and `download_binary_file`
 
-The plugin source is complete enough to build and publish.
+## UI overview
 
-Important publishing note:
-- Tabby plugin discovery normally depends on an npm package with the `tabby-plugin` keyword
-- this machine is authenticated to GitHub, but not authenticated to npm
-- therefore I can prepare the plugin and publish the source repo now, but direct appearance in Tabby's plugin manager still requires npm publication
+Inside Tabby, the plugin adds:
 
-## Planned Tabby UI
-
-The plugin adds a settings tab called `Bianbu MCP` with these fields:
-- Enable integration
-- Profile name
+### 1. Bianbu MCP settings page
+Fields:
+- enable integration
+- profile name
 - MCP URL
 - X-API-KEY
-- Request interval (ms)
-- Max retries
-- Retry base delay (ms)
-- Notes
+- request interval (ms)
+- max retries
+- retry base delay (ms)
+- notes
 
-It also renders a generated JSON block users can copy into other MCP-capable tools.
+### 2. Bianbu Cloud Shell tab
+Features:
+- command input
+- working directory input
+- timeout input
+- `as_root` toggle
+- output history with stdout/stderr blocks
 
-## Package name
+### 3. Bianbu Cloud Files tab
+Features:
+- directory browser
+- open text files
+- edit and save text files
+- create directories and files
+- upload files
+- download files
+- delete files/directories
+- `as_root` toggle
 
-```text
-tabby-bianbu-mcp
-```
+## Package
+
+- npm: `tabby-bianbu-mcp`
+- keyword: `tabby-plugin`
 
 ## Build
 
@@ -46,27 +63,18 @@ npm run build
 
 ## Publish
 
-When npm auth is available:
-
 ```bash
 npm publish --access public
 ```
 
-## Why it may not show up in Tabby yet
+## Installability in Tabby
 
-Tabby's in-app plugin manager discovers published plugin packages, typically from npm, via the `tabby-plugin` keyword.
-Without npm publication, the plugin can exist on GitHub but will not be discoverable in the plugin search UI.
+This package is intended to be discoverable by Tabby's plugin manager through npm publication.
+Because Tabby's plugin discovery behavior can lag behind npm indexing, it may take a bit of time before search results update.
 
-## Files
+## Source repository
 
-- `src/index.ts`
-- `src/configProvider.ts`
-- `src/settingsTabProvider.ts`
-- `src/settingsTab.component.ts`
-- `src/settingsTab.component.pug`
-- `webpack.config.js`
-- `tsconfig.json`
-- `package.json`
+https://github.com/niver2002/tabby-bianbu-mcp
 
 ## License
 

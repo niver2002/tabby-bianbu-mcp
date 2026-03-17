@@ -1,8 +1,11 @@
-import { ConfigService } from 'tabby-core';
+import { AppService, ConfigService } from 'tabby-core';
 /** @hidden */
 export declare class BianbuMcpSettingsComponent {
     config: ConfigService;
-    constructor(config: ConfigService);
+    private app;
+    constructor(config: ConfigService, app: AppService);
     get sampleJson(): string;
     save(): void;
+    openShell(): void;
+    openFiles(): void;
 }

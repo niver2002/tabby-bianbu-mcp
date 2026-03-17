@@ -1,0 +1,41 @@
+div(style='padding: 16px; display: flex; flex-direction: column; gap: 16px; height: 100%')
+  .card(style='padding: 16px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top: 0') Bianbu Cloud Shell
+    p(style='opacity: .8; margin-bottom: 0')
+      | Shell-like remote execution over MCP #[code run_command]. This is not native SSH transport; it is a remote command console backed by your Bianbu Cloud MCP endpoint.
+
+  .card(style='padding: 16px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    .row(style='display: grid; grid-template-columns: 1fr 180px 120px auto auto; gap: 12px; align-items: end')
+      .field
+        label(style='display:block; margin-bottom: 6px') Command
+        input.form-control(type='text', [(ngModel)]='command', placeholder='id && whoami && pwd', [disabled]='busy', (keyup.enter)='run()')
+      .field
+        label(style='display:block; margin-bottom: 6px') Working directory
+        input.form-control(type='text', [(ngModel)]='cwd', placeholder='.', [disabled]='busy')
+      .field
+        label(style='display:block; margin-bottom: 6px') Timeout
+        input.form-control(type='number', min='1', [(ngModel)]='timeoutSeconds', [disabled]='busy')
+      .field
+        label(style='display:block; margin-bottom: 6px') Root
+        input(type='checkbox', [(ngModel)]='asRoot', [disabled]='busy')
+      .field(style='display:flex; gap: 8px')
+        button.btn.btn-primary(type='button', (click)='run()', [disabled]='busy || !command.trim()') {{ busy ? 'Running…' : 'Run' }}
+        button.btn.btn-secondary(type='button', (click)='clear()', [disabled]='busy || !entries.length') Clear
+
+  .card(style='padding: 16px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); flex: 1; overflow: auto')
+    h4(style='margin-top: 0') Output history
+    div(*ngIf='!entries.length', style='opacity: .7') No commands executed yet.
+    div(*ngFor='let entry of entries', style='margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08)')
+      div(style='display:flex; justify-content:space-between; gap:12px; margin-bottom:8px')
+        div
+          b {{ entry.command }}
+          div(style='opacity:.7; font-size:.9em') cwd={{ entry.cwd }} • as_root={{ entry.asRoot }}
+        div(style='text-align:right; opacity:.7; font-size:.9em')
+          div {{ entry.time }}
+          div exit={{ entry.exitCode }} • ok={{ entry.ok }}
+      div(*ngIf='entry.stdout', style='margin-bottom:8px')
+        div(style='font-weight:600; margin-bottom:4px') STDOUT
+        pre(style='white-space:pre-wrap; padding:12px; border-radius:8px; background:#0b1220') {{ entry.stdout }}
+      div(*ngIf='entry.stderr')
+        div(style='font-weight:600; margin-bottom:4px') STDERR
+        pre(style='white-space:pre-wrap; padding:12px; border-radius:8px; background:#2a1111') {{ entry.stderr }}

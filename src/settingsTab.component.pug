@@ -1,61 +1,49 @@
-h3 Bianbu MCP
+div(style='padding: 20px; display:flex; flex-direction:column; gap:16px')
+  .hero(style='padding:18px; border-radius:12px; background:linear-gradient(135deg, rgba(25,53,103,.9), rgba(17,94,89,.85)); color:white')
+    h2(style='margin:0 0 8px 0') Bianbu MCP
+    p(style='margin:0; opacity:.92')
+      | Configure your Bianbu Cloud MCP endpoint and open a shell-like tab or a file-manager-like tab directly from Tabby.
 
-p
-  | Configure a Bianbu Cloud MCP endpoint for use in Tabby and other AI IDE workflows.
+  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Quick actions
+    div(style='display:flex; gap:12px; flex-wrap:wrap')
+      button.btn.btn-primary(type='button', (click)='openShell()') Open Bianbu Cloud Shell
+      button.btn.btn-secondary(type='button', (click)='openFiles()') Open Bianbu Cloud Files
 
-.form-line
-  .header
-    .title Enable integration
-    .description Store connection details in Tabby config
-  input(type='checkbox', [(ngModel)]='config.store.bianbuMcp.enabled', (ngModelChange)='save()')
+  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Connection settings
+    .grid(style='display:grid; grid-template-columns: 160px 1fr; gap:12px; align-items:center')
+      label Enable integration
+      input(type='checkbox', [(ngModel)]='config.store.bianbuMcp.enabled', (ngModelChange)='save()')
 
-.form-line
-  .header
-    .title Profile name
-    .description Display name used for generated config snippets
-  input.form-control(type='text', [(ngModel)]='config.store.bianbuMcp.name', (ngModelChange)='save()', placeholder='bianbu')
+      label Profile name
+      input.form-control(type='text', [(ngModel)]='config.store.bianbuMcp.name', (ngModelChange)='save()', placeholder='bianbu')
 
-.form-line
-  .header
-    .title MCP URL
-    .description Example: https://your-domain.example.com/mcp
-  input.form-control(type='text', [(ngModel)]='config.store.bianbuMcp.url', (ngModelChange)='save()', placeholder='https://your-domain.example.com/mcp')
+      label MCP URL
+      input.form-control(type='text', [(ngModel)]='config.store.bianbuMcp.url', (ngModelChange)='save()', placeholder='https://your-domain.example.com/mcp')
 
-.form-line
-  .header
-    .title X-API-KEY
-    .description Paste the API key copied from the Bianbu Cloud API Key page
-  input.form-control(type='password', [(ngModel)]='config.store.bianbuMcp.apiKey', (ngModelChange)='save()', placeholder='your-x-api-key')
+      label X-API-KEY
+      input.form-control(type='password', [(ngModel)]='config.store.bianbuMcp.apiKey', (ngModelChange)='save()', placeholder='your-x-api-key')
 
-.form-line
-  .header
-    .title Request interval (ms)
-    .description Recommended stable default: 1000
-  input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.minIntervalMs', (ngModelChange)='save()')
+      label Interval (ms)
+      input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.minIntervalMs', (ngModelChange)='save()')
 
-.form-line
-  .header
-    .title Max retries
-    .description Retry count for gateway instability
-  input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.maxRetries', (ngModelChange)='save()')
+      label Max retries
+      input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.maxRetries', (ngModelChange)='save()')
 
-.form-line
-  .header
-    .title Retry base delay (ms)
-    .description Recommended stable default: 1000
-  input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.retryBaseMs', (ngModelChange)='save()')
+      label Retry base (ms)
+      input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.retryBaseMs', (ngModelChange)='save()')
 
-.form-line
-  .header
-    .title Notes
-    .description Optional reminder for this endpoint
-  textarea.form-control(rows='3', [(ngModel)]='config.store.bianbuMcp.notes', (ngModelChange)='save()', placeholder='Optional notes')
+      label Notes
+      textarea.form-control(rows='3', [(ngModel)]='config.store.bianbuMcp.notes', (ngModelChange)='save()', placeholder='Optional notes')
 
-h4(style='margin-top: 1.5em') Copyable MCP snippet
-pre(style='white-space: pre-wrap') {{ sampleJson }}
+  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Copyable MCP snippet
+    pre(style='white-space: pre-wrap; margin-bottom:0') {{ sampleJson }}
 
-h4(style='margin-top: 1.5em') Bianbu Cloud reminder
-ul
-  li The MCP URL is usually built as #[code https://&lt;domain&gt;/mcp]
-  li The key is copied from the Bianbu Cloud #[code API Key] page
-  li If your AI IDE asks for a local #[code command], it probably cannot use remote HTTP MCP directly
+  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Reminder
+    ul(style='margin-bottom:0')
+      li MCP URL is typically #[code https://&lt;domain&gt;/mcp]
+      li #[code X-API-KEY] is copied from the Bianbu Cloud API Key page
+      li Shell and Files tabs are UI views backed by MCP calls, not native SSH/SFTP transport

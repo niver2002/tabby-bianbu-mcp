@@ -1,5 +1,7 @@
 import { Component } from '@angular/core'
-import { ConfigService } from 'tabby-core'
+import { AppService, ConfigService } from 'tabby-core'
+import { BianbuCloudFilesTabComponent } from './filesTab.component'
+import { BianbuCloudShellTabComponent } from './shellTab.component'
 
 /** @hidden */
 @Component({
@@ -8,6 +10,7 @@ import { ConfigService } from 'tabby-core'
 export class BianbuMcpSettingsComponent {
   constructor (
     public config: ConfigService,
+    private app: AppService,
   ) { }
 
   get sampleJson (): string {
@@ -27,5 +30,13 @@ export class BianbuMcpSettingsComponent {
 
   save (): void {
     this.config.save()
+  }
+
+  openShell (): void {
+    this.app.openNewTab({ type: BianbuCloudShellTabComponent })
+  }
+
+  openFiles (): void {
+    this.app.openNewTab({ type: BianbuCloudFilesTabComponent })
   }
 }

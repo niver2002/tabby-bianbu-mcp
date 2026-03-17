@@ -1,7 +1,7 @@
 {
   "name": "tabby-bianbu-mcp",
-  "version": "0.1.0",
-  "description": "Tabby plugin for configuring a Bianbu Cloud MCP endpoint",
+  "version": "0.2.0",
+  "description": "Tabby plugin for Bianbu Cloud shell-like and file-manager-like tabs over MCP",
   "author": "niver2002",
   "license": "MIT",
   "keywords": [
