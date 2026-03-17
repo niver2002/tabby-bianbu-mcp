@@ -1,88 +1,52 @@
 import { Component, Injector, Input } from '@angular/core'
-import { BaseTabComponent, NotificationsService } from 'tabby-core'
+import { BaseSession, BaseTerminalTabComponent } from 'tabby-terminal'
+import { NotificationsService } from 'tabby-core'
 import { BianbuMcpService } from './mcp.service'
-
-interface ShellEntry {
-  command: string
-  cwd: string
-  asRoot: boolean
-  stdout: string
-  stderr: string
-  exitCode: number | null
-  ok: boolean
-  time: string
-}
+import { BianbuShellSession } from './shellSession'
+import { BianbuCloudProfile } from './profileProvider'
 
 /** @hidden */
 @Component({
-  template: require('./shellTab.component.pug'),
+  template: BaseTerminalTabComponent.template,
+  styles: BaseTerminalTabComponent.styles,
+  animations: BaseTerminalTabComponent.animations,
 })
-export class BianbuCloudShellTabComponent extends BaseTabComponent {
-  @Input() presetCommand = ''
-
-  command = ''
-  cwd = '.'
-  timeoutSeconds = 120
-  asRoot = false
-  busy = false
-  entries: ShellEntry[] = []
+export class BianbuCloudShellTabComponent extends BaseTerminalTabComponent<any> {
+  @Input() profile: BianbuCloudProfile
+  @Input() asRoot = false
+  @Input() cwd = '.'
 
   constructor (
     injector: Injector,
     private mcp: BianbuMcpService,
-    private notifications: NotificationsService,
+    protected localNotifications: NotificationsService,
   ) {
     super(injector)
     this.setTitle('Bianbu Cloud Shell')
     this.icon = 'terminal'
-  }
-
-  ngOnInit (): void {
-    if (this.presetCommand) {
-      this.command = this.presetCommand
+    this.enableToolbar = true
+    this.profile = this.profile || {
+      id: 'bianbu-cloud-shell',
+      type: 'bianbu-cloud',
+      name: 'Bianbu Cloud Shell',
+      group: 'Bianbu Cloud',
+      options: { kind: 'shell' },
+      icon: 'terminal',
+      color: '#2b6cb0',
+      disableDynamicTitle: false,
+      behaviorOnSessionEnd: 'keep',
+      weight: 0,
+      isBuiltin: true,
+      isTemplate: false,
     }
   }
 
-  async run (): Promise<void> {
-    if (!this.command.trim()) {
-      return
-    }
-    this.busy = true
-    this.setProgress(0.3)
-    try {
-      const result = await this.mcp.runCommand(this.command, this.cwd || '.', this.timeoutSeconds, this.asRoot)
-      this.entries.unshift({
-        command: this.command,
-        cwd: this.cwd || '.',
-        asRoot: this.asRoot,
-        stdout: result.stdout || '',
-        stderr: result.stderr || '',
-        exitCode: result.exit_code ?? null,
-        ok: !!result.ok,
-        time: new Date().toLocaleString(),
-      })
-      this.displayActivity()
-      this.notifications.notice('Bianbu Cloud command finished')
-    } catch (error: any) {
-      this.entries.unshift({
-        command: this.command,
-        cwd: this.cwd || '.',
-        asRoot: this.asRoot,
-        stdout: '',
-        stderr: String(error?.message || error),
-        exitCode: null,
-        ok: false,
-        time: new Date().toLocaleString(),
-      })
-      this.notifications.error('Bianbu Cloud command failed', String(error?.message || error))
-    } finally {
-      this.busy = false
-      this.setProgress(null)
-    }
-  }
-
-  clear (): void {
-    this.entries = []
-    this.clearActivity()
+  protected async onFrontendReady (): Promise<void> {
+    const session = new BianbuShellSession(this.logger, this.mcp)
+    this.setSession(session as BaseSession, true)
+    await session.start({ cwd: this.cwd, asRoot: this.asRoot })
+    session.releaseInitialDataBuffer()
+    this.localNotifications.notice('Bianbu Cloud shell ready')
+    super.onFrontendReady()
   }
 }

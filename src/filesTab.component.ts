@@ -1,4 +1,4 @@
-import { Component, Injector } from '@angular/core'
+import { Component, Injector, HostListener } from '@angular/core'
 import { BaseTabComponent, NotificationsService } from 'tabby-core'
 import { BianbuMcpService } from './mcp.service'
 
@@ -8,14 +8,23 @@ import { BianbuMcpService } from './mcp.service'
 })
 export class BianbuCloudFilesTabComponent extends BaseTabComponent {
   currentPath = '.'
+  pathInput = '.'
   asRoot = false
   busy = false
   items: any[] = []
+  filteredItems: any[] = []
   selectedPath = ''
   selectedContent = ''
   newDirectoryName = ''
   newFileName = ''
   status = 'Ready'
+  dragActive = false
+  searchText = ''
+  history: string[] = ['.']
+  historyIndex = 0
+  selectedIndex = -1
+  renameTarget = ''
+  renameValue = ''
 
   constructor (
     injector: Injector,
@@ -31,14 +40,103 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     this.refresh().catch(() => null)
   }
 
+  get breadcrumbs (): string[] {
+    if (!this.currentPath || this.currentPath === '.') {
+      return ['.']
+    }
+    const normalized = this.currentPath.replace(/\\/g, '/')
+    if (normalized === '/') {
+      return ['/']
+    }
+    const parts = normalized.split('/').filter(Boolean)
+    return normalized.startsWith('/') ? ['/'].concat(parts) : parts
+  }
+
+  get selectedItem (): any | null {
+    return this.filteredItems[this.selectedIndex] ?? null
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeyDown (event: KeyboardEvent): void {
+    const target = event.target as HTMLElement | null
+    const tag = target?.tagName?.toLowerCase()
+    const editing = ['input', 'textarea'].includes(tag || '')
+
+    if (event.key === 'F5') {
+      event.preventDefault()
+      void this.refresh()
+      return
+    }
+    if (event.altKey && event.key === 'ArrowUp') {
+      event.preventDefault()
+      this.goUp()
+      return
+    }
+    if (event.altKey && event.key === 'ArrowLeft') {
+      event.preventDefault()
+      this.goBack()
+      return
+    }
+    if (event.altKey && event.key === 'ArrowRight') {
+      event.preventDefault()
+      this.goForward()
+      return
+    }
+    if (event.ctrlKey && event.key.toLowerCase() === 'l') {
+      event.preventDefault()
+      const el = document.getElementById('bianbu-path-input') as HTMLInputElement | null
+      el?.focus()
+      el?.select()
+      return
+    }
+    if (editing) {
+      return
+    }
+    if (event.key === 'Backspace') {
+      event.preventDefault()
+      this.goUp()
+      return
+    }
+    if (event.key === 'Delete' && this.selectedItem) {
+      event.preventDefault()
+      void this.deleteItem(this.selectedItem)
+      return
+    }
+    if (event.key === 'F2' && this.selectedItem) {
+      event.preventDefault()
+      this.startRename(this.selectedItem)
+      return
+    }
+    if (event.key === 'Enter' && this.selectedItem) {
+      event.preventDefault()
+      void this.openItem(this.selectedItem)
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      this.moveSelection(1)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      this.moveSelection(-1)
+      return
+    }
+  }
+
   async refresh (): Promise<void> {
     this.busy = true
     this.status = 'Loading directory…'
+    this.pathInput = this.currentPath
     this.setProgress(0.3)
     try {
       const result = await this.mcp.listDirectory(this.currentPath || '.', this.asRoot)
       this.items = result.items || []
+      this.applyFilter()
       this.status = `Loaded ${this.items.length} item(s)`
+      if (this.filteredItems.length && this.selectedIndex < 0) {
+        this.selectedIndex = 0
+      }
     } catch (error: any) {
       this.notifications.error('Failed to list directory', String(error?.message || error))
       this.status = String(error?.message || error)
@@ -48,12 +146,94 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
   }
 
+  applyFilter (): void {
+    const q = this.searchText.trim().toLowerCase()
+    this.filteredItems = this.items.filter(item => !q || item.path.toLowerCase().includes(q))
+    if (this.selectedIndex >= this.filteredItems.length) {
+      this.selectedIndex = this.filteredItems.length - 1
+    }
+  }
+
+  async navigateToInput (): Promise<void> {
+    this.navigate(this.pathInput || '.')
+  }
+
+  navigate (path: string, pushHistory = true): void {
+    this.currentPath = path || '.'
+    this.pathInput = this.currentPath
+    if (pushHistory) {
+      this.history = this.history.slice(0, this.historyIndex + 1)
+      this.history.push(this.currentPath)
+      this.historyIndex = this.history.length - 1
+    }
+    this.selectedPath = ''
+    this.selectedContent = ''
+    this.selectedIndex = -1
+    void this.refresh()
+  }
+
+  navigateBreadcrumb (index: number): void {
+    if (this.currentPath === '.' && index === 0) {
+      this.navigate('.', true)
+      return
+    }
+    const crumbs = this.breadcrumbs
+    if (crumbs[0] === '/') {
+      if (index === 0) {
+        this.navigate('/', true)
+        return
+      }
+      this.navigate('/' + crumbs.slice(1, index + 1).join('/'), true)
+      return
+    }
+    this.navigate(crumbs.slice(0, index + 1).join('/'), true)
+  }
+
+  goBack (): void {
+    if (this.historyIndex <= 0) {
+      return
+    }
+    this.historyIndex -= 1
+    this.navigate(this.history[this.historyIndex], false)
+  }
+
+  goForward (): void {
+    if (this.historyIndex >= this.history.length - 1) {
+      return
+    }
+    this.historyIndex += 1
+    this.navigate(this.history[this.historyIndex], false)
+  }
+
+  goUp (): void {
+    if (this.currentPath === '.' || this.currentPath === '/') {
+      return
+    }
+    const normalized = this.currentPath.replace(/\\/g, '/')
+    const parent = normalized.split('/').slice(0, -1).join('/') || (normalized.startsWith('/') ? '/' : '.')
+    this.navigate(parent, true)
+  }
+
+  moveSelection (delta: number): void {
+    if (!this.filteredItems.length) {
+      this.selectedIndex = -1
+      return
+    }
+    if (this.selectedIndex < 0) {
+      this.selectedIndex = 0
+      return
+    }
+    this.selectedIndex = Math.max(0, Math.min(this.filteredItems.length - 1, this.selectedIndex + delta))
+  }
+
+  selectItem (item: any): void {
+    this.selectedIndex = this.filteredItems.indexOf(item)
+  }
+
   async openItem (item: any): Promise<void> {
+    this.selectItem(item)
     if (item.is_dir) {
-      this.currentPath = item.path
-      this.selectedPath = ''
-      this.selectedContent = ''
-      await this.refresh()
+      this.navigate(item.path, true)
       return
     }
 
@@ -129,6 +309,40 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
   }
 
+  startRename (item: any): void {
+    this.renameTarget = item.path
+    this.renameValue = item.path.split('/').pop() || item.path
+  }
+
+  cancelRename (): void {
+    this.renameTarget = ''
+    this.renameValue = ''
+  }
+
+  async commitRename (item: any): Promise<void> {
+    if (!this.renameTarget || !this.renameValue.trim()) {
+      this.cancelRename()
+      return
+    }
+    const parent = item.path.split('/').slice(0, -1).join('/') || '.'
+    const newPath = this.joinPath(parent, this.renameValue.trim())
+    try {
+      if (item.is_dir) {
+        await this.mcp.makeDirectory(newPath, this.asRoot)
+      } else {
+        const content = await this.mcp.readTextFile(item.path, 512 * 1024, this.asRoot)
+        await this.mcp.writeTextFile(newPath, content.content || '', this.asRoot)
+      }
+      await this.mcp.deletePath(item.path, !!item.is_dir, this.asRoot)
+      this.notifications.notice('Path renamed')
+      this.cancelRename()
+      await this.refresh()
+    } catch (error: any) {
+      this.notifications.error('Rename failed', String(error?.message || error))
+      this.status = String(error?.message || error)
+    }
+  }
+
   async deleteItem (item: any): Promise<void> {
     this.busy = true
     try {
@@ -153,6 +367,11 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     if (!file) {
       return
     }
+    await this.uploadDroppedFile(file)
+    input.value = ''
+  }
+
+  async uploadDroppedFile (file: File): Promise<void> {
     this.busy = true
     try {
       const base64 = await this.readFileAsBase64(file)
@@ -165,8 +384,26 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
       this.status = String(error?.message || error)
     } finally {
       this.busy = false
-      input.value = ''
     }
+  }
+
+  onDragOver (event: DragEvent): void {
+    event.preventDefault()
+    this.dragActive = true
+  }
+
+  onDragLeave (): void {
+    this.dragActive = false
+  }
+
+  async onDrop (event: DragEvent): Promise<void> {
+    event.preventDefault()
+    this.dragActive = false
+    const file = event.dataTransfer?.files?.[0]
+    if (!file) {
+      return
+    }
+    await this.uploadDroppedFile(file)
   }
 
   async downloadSelected (): Promise<void> {

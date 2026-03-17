@@ -1,6 +1,6 @@
 {
   "name": "tabby-bianbu-mcp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Tabby plugin for Bianbu Cloud shell-like and file-manager-like tabs over MCP",
   "author": "niver2002",
   "license": "MIT",
@@ -36,6 +36,7 @@
     "style-loader": "^2.0.0",
     "tabby-core": "^1.0.231-nightly.0",
     "tabby-settings": "^1.0.231-nightly.0",
+    "tabby-terminal": "^1.0.231-nightly.0",
     "ts-loader": "^9.5.1",
     "typescript": "^4.9.5",
     "webpack": "^5.98.0",

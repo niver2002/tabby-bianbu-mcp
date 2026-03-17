@@ -1,52 +1,63 @@
-div(style='padding: 16px; display:flex; flex-direction:column; gap:16px; height:100%')
-  .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Bianbu Cloud Files
-    p(style='opacity:.8; margin-bottom:0')
-      | File-manager-like remote access over MCP. This behaves like an SFTP panel, but it is backed by MCP file tools instead of the native SFTP protocol.
+div(style='height:100%; display:flex; flex-direction:column; background:var(--backgroundColor, #111)')
+  .topbar(style='padding:12px 14px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:10px; background:rgba(255,255,255,0.02)')
+    .toolbar(style='display:flex; gap:8px; align-items:center; flex-wrap:wrap')
+      button.btn.btn-sm.btn-secondary(type='button', (click)='goBack()', [disabled]='busy || historyIndex <= 0', title='Back (Alt+Left)') ←
+      button.btn.btn-sm.btn-secondary(type='button', (click)='goForward()', [disabled]='busy || historyIndex >= history.length - 1', title='Forward (Alt+Right)') →
+      button.btn.btn-sm.btn-secondary(type='button', (click)='goUp()', [disabled]='busy || currentPath === "." || currentPath === "/"', title='Up (Alt+Up / Backspace)') ↑
+      button.btn.btn-sm.btn-secondary(type='button', (click)='refresh()', [disabled]='busy', title='Refresh (F5)') ⟳
+      label.btn.btn-sm.btn-secondary(style='margin:0', title='Upload file') ⤴
+        input(type='file', style='display:none', (change)='uploadFile($event)', [disabled]='busy')
+      button.btn.btn-sm.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath', title='Download selected') ⤵
+      button.btn.btn-sm.btn-secondary(type='button', (click)='createDirectory()', [disabled]='busy || !newDirectoryName.trim()', title='Create directory') New folder
+      button.btn.btn-sm.btn-secondary(type='button', (click)='createFile()', [disabled]='busy || !newFileName.trim()', title='Create file') New file
+      input.form-control(type='text', style='width:180px', [(ngModel)]='newDirectoryName', placeholder='folder name')
+      input.form-control(type='text', style='width:180px', [(ngModel)]='newFileName', placeholder='file name')
+      label(style='display:flex; align-items:center; gap:6px; margin-left:auto')
+        input(type='checkbox', [(ngModel)]='asRoot', (ngModelChange)='refresh()')
+        span as_root
+    .address(style='display:flex; gap:8px; align-items:center')
+      div(style='display:flex; gap:4px; align-items:center; flex-wrap:wrap; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04); flex:1')
+        button.btn.btn-link(type='button', *ngFor='let crumb of breadcrumbs; let i=index', (click)='navigateBreadcrumb(i)', style='padding:0 4px; min-height:auto') {{ crumb }}
+      input#bianbu-path-input.form-control(type='text', style='max-width:420px', [(ngModel)]='pathInput', (keyup.enter)='navigateToInput()', title='Ctrl+L to focus path')
+    .searchrow(style='display:flex; gap:8px; align-items:center')
+      input.form-control(type='text', [(ngModel)]='searchText', (ngModelChange)='applyFilter()', placeholder='Filter current directory…')
+      div(style='opacity:.7; white-space:nowrap') {{ status }}
 
-  .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08)')
-    .row(style='display:grid; grid-template-columns: 1fr auto auto; gap:12px; align-items:end')
-      .field
-        label(style='display:block; margin-bottom:6px') Current path
-        input.form-control(type='text', [(ngModel)]='currentPath', [disabled]='busy')
-      .field
-        label(style='display:block; margin-bottom:6px') Root
-        input(type='checkbox', [(ngModel)]='asRoot', [disabled]='busy')
-      .field(style='display:flex; gap:8px')
-        button.btn.btn-primary(type='button', (click)='refresh()', [disabled]='busy') Refresh
-        label.btn.btn-secondary(style='margin:0') Upload
-          input(type='file', style='display:none', (change)='uploadFile($event)', [disabled]='busy')
-    div(style='margin-top:12px; opacity:.75') {{ status }}
-
-  .row(style='display:grid; grid-template-columns: 420px 1fr; gap:16px; flex:1; min-height:0')
-    .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); overflow:auto')
-      div(style='display:grid; grid-template-columns: 1fr 1fr auto; gap:8px; margin-bottom:12px')
-        input.form-control(type='text', [(ngModel)]='newDirectoryName', placeholder='new-directory', [disabled]='busy')
-        input.form-control(type='text', [(ngModel)]='newFileName', placeholder='new-file.txt', [disabled]='busy')
-        div(style='display:flex; gap:8px')
-          button.btn.btn-secondary(type='button', (click)='createDirectory()', [disabled]='busy || !newDirectoryName.trim()') Mkdir
-          button.btn.btn-secondary(type='button', (click)='createFile()', [disabled]='busy || !newFileName.trim()') New file
-      table(style='width:100%; border-collapse:collapse')
+  .main(style='display:grid; grid-template-columns: minmax(420px, 46%) 1fr; gap:0; flex:1; min-height:0')
+    .pane.left(
+      style='display:flex; flex-direction:column; min-height:0; border-right:1px solid rgba(255,255,255,0.08); position:relative',
+      [style.outline]='dragActive ? "2px dashed #4ade80" : "none"',
+      (dragover)='onDragOver($event)',
+      (dragleave)='onDragLeave()',
+      (drop)='onDrop($event)')
+      div(*ngIf='dragActive', style='position:absolute; inset:12px; border-radius:12px; background:rgba(74,222,128,0.08); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none') Drop file to upload
+      table(style='width:100%; border-collapse:collapse; table-layout:fixed')
         thead
           tr(style='text-align:left; opacity:.7')
-            th(style='padding:8px') Name
-            th(style='padding:8px') Type
-            th(style='padding:8px') Size
-            th(style='padding:8px')
-        tbody
-          tr(*ngFor='let item of items', style='border-top:1px solid rgba(255,255,255,0.08)')
-            td(style='padding:8px; cursor:pointer', (click)='openItem(item)') {{ item.path.split('/').pop() || item.path }}
-            td(style='padding:8px') {{ item.is_dir ? 'dir' : 'file' }}
-            td(style='padding:8px') {{ item.size }}
-            td(style='padding:8px; text-align:right')
-              button.btn.btn-sm.btn-outline-danger(type='button', (click)='deleteItem(item)', [disabled]='busy') Delete
-
-    .card(style='padding:16px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; min-height:0')
-      div(style='display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:12px')
+            th(style='padding:10px 12px; width:45%') Name
+            th(style='padding:10px 12px; width:15%') Type
+            th(style='padding:10px 12px; width:20%') Size
+            th(style='padding:10px 12px; width:20%') Actions
+      div(style='overflow:auto; flex:1')
+        table(style='width:100%; border-collapse:collapse; table-layout:fixed')
+          tbody
+            tr(*ngFor='let item of filteredItems; let i=index', [style.background]='i === selectedIndex ? "rgba(59,130,246,0.14)" : "transparent"', style='border-top:1px solid rgba(255,255,255,0.06); cursor:default', (click)='selectItem(item)', (dblclick)='openItem(item)')
+              td(style='padding:10px 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis')
+                span(*ngIf='renameTarget !== item.path') {{ item.path.split('/').pop() || item.path }}
+                input.form-control(*ngIf='renameTarget === item.path', type='text', [(ngModel)]='renameValue', (keyup.enter)='commitRename(item)', (keyup.escape)='cancelRename()')
+              td(style='padding:10px 12px') {{ item.is_dir ? 'dir' : 'file' }}
+              td(style='padding:10px 12px') {{ item.size }}
+              td(style='padding:10px 12px')
+                div(style='display:flex; gap:6px; flex-wrap:wrap')
+                  button.btn.btn-sm.btn-secondary(type='button', (click)='openItem(item); $event.stopPropagation()') Open
+                  button.btn.btn-sm.btn-secondary(type='button', (click)='startRename(item); $event.stopPropagation()') Rename
+                  button.btn.btn-sm.btn-outline-danger(type='button', (click)='deleteItem(item); $event.stopPropagation()') Delete
+    .pane.right(style='display:flex; flex-direction:column; min-height:0')
+      .previewHeader(style='padding:12px 14px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; gap:12px; align-items:center')
         div
-          h4(style='margin:0') File preview
-          div(style='opacity:.7; font-size:.9em') {{ selectedPath || 'No file selected' }}
+          h4(style='margin:0') Preview / Editor
+          div(style='opacity:.7; font-size:.9em') {{ selectedPath || 'Select a file from the left pane' }}
         div(style='display:flex; gap:8px')
-          button.btn.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath') Download
-          button.btn.btn-primary(type='button', (click)='saveSelected()', [disabled]='busy || !selectedPath') Save
-      textarea.form-control(style='flex:1; min-height:320px', [(ngModel)]='selectedContent', [disabled]='busy || !selectedPath', placeholder='Select a text file to view or edit')
+          button.btn.btn-sm.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath') Download
+          button.btn.btn-sm.btn-primary(type='button', (click)='saveSelected()', [disabled]='busy || !selectedPath') Save
+      textarea.form-control(style='flex:1; min-height:0; border:none; border-radius:0; background:transparent; padding:14px', [(ngModel)]='selectedContent', [disabled]='busy || !selectedPath', placeholder='Open a text file to preview or edit it')

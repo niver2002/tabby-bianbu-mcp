@@ -4,8 +4,9 @@ A Tabby plugin that adds polished Bianbu Cloud remote tabs backed by your MCP en
 
 What it provides:
 - a dedicated `Bianbu MCP` settings page inside Tabby
-- a `Bianbu Cloud Shell` tab that behaves like a remote shell window
-- a `Bianbu Cloud Files` tab that behaves like a file-manager / SFTP-style window
+- `Bianbu Cloud Shell` and `Bianbu Cloud Files` entries integrated into Tabby's tab/profile flow
+- a terminal-based shell experience backed by MCP `run_command`
+- an explorer-like file manager backed by MCP file tools
 - connection fields for MCP URL, `X-API-KEY`, pacing, retries, and notes
 - quick actions and copyable config snippets
 
