@@ -1,12 +1,23 @@
 import { ConfigService } from 'tabby-core';
 import { RemoteHealthInfo, RemoteInstallerAsset } from './remoteRelease';
 import { LogDownloadPayload, SessionLog } from './sessionLogs';
+export interface MaintenanceProgress {
+    step: 'upload' | 'launch' | 'wait' | 'verify';
+    stepIndex: number;
+    totalSteps: number;
+    label: string;
+    percent: number;
+    detail?: string;
+    error?: boolean;
+}
 interface PushInstallerAndUpgradeOptions {
     action?: 'bootstrap' | 'repair' | 'up';
     asRoot?: boolean;
     healthTimeoutMs?: number;
+    onProgress?: (p: MaintenanceProgress) => void;
     reconnectPollMs?: number;
     remotePath?: string;
+    signal?: AbortSignal;
 }
 type LaneKind = 'interactive' | 'transfer';
 export declare class BianbuMcpService {
@@ -70,7 +81,7 @@ export declare class BianbuMcpService {
     uploadChunkedPart(uploadId: string, contentBase64: string, offset?: number, signal?: AbortSignal): Promise<any>;
     uploadChunkedFinish(uploadId: string): Promise<any>;
     uploadChunkedAbort(uploadId: string): Promise<any>;
-    uploadTextViaChunked(path: string, text: string, asRoot: boolean): Promise<void>;
+    uploadTextViaChunked(path: string, text: string, asRoot: boolean, onChunkProgress?: (bytesSent: number, bytesTotal: number) => void): Promise<void>;
     downloadBinaryFile(path: string, asRoot: boolean, signal?: AbortSignal): Promise<any>;
     downloadChunkedBegin(path: string, asRoot: boolean, chunkBytes?: number): Promise<any>;
     downloadChunkedPart(downloadId: string, offset?: number, chunkBytes?: number, signal?: AbortSignal): Promise<any>;

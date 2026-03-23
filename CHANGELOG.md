@@ -2,6 +2,19 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.9.0] - 2026-03-23
+
+### Added
+- **Maintenance progress UI**: step-by-step progress bar with 4 phases (Upload → Launch → Wait → Verify), animated step dots, percentage bar, elapsed timer, and status label
+- **Cancel button**: abort a running upgrade/repair at any phase
+- **Cancellation support**: `AbortSignal` propagated through upload and wait loops for clean cancellation
+- **Chunk upload progress**: `uploadTextViaChunked` reports per-chunk byte progress to the UI
+- **Consecutive-failure abort**: `waitForInstallerCompletion` aborts early after 10 consecutive health check failures instead of waiting for full timeout
+
+### Improved
+- **Error display**: errors now show in a bordered red box with the failed step name prefixed (e.g. `[upload] connection refused`)
+- **Error context**: error messages include which step failed, making debugging easier
+
 ## [0.8.5] - 2026-03-23
 
 ### Fixed

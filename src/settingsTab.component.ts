@@ -3,6 +3,7 @@ import { AppService, ConfigService, NotificationsService, PlatformService } from
 import { BianbuCloudFilesTabComponent } from './filesTab.component'
 import { BianbuCloudShellTabComponent } from './shellTab.component'
 import { BianbuMcpService } from './mcp.service'
+import { MaintenanceProgress } from './mcp.service'
 import { RemoteHealthInfo } from './remoteRelease'
 
 /** @hidden */
@@ -12,12 +13,16 @@ import { RemoteHealthInfo } from './remoteRelease'
 export class BianbuMcpSettingsComponent {
   diagnosticsBusy = false
   maintenanceBusy = false
+  maintenanceProgress: MaintenanceProgress | null = null
+  maintenanceElapsed = 0
   remoteHealth: RemoteHealthInfo | null = null
   lastDiagnosticAt = ''
   lastMaintenanceAt = ''
   lastMaintenanceSummary = ''
   lastError = ''
   advancedVisible = false
+  private maintenanceAbort: AbortController | null = null
+  private elapsedTimer: any = null
 
   constructor (
     public config: ConfigService,
@@ -97,13 +102,20 @@ export class BianbuMcpSettingsComponent {
   async pushUpgrade (action: 'up' | 'repair' = 'up'): Promise<void> {
     this.lastError = ''
     this.maintenanceBusy = true
+    this.maintenanceElapsed = 0
+    this.maintenanceProgress = { step: 'upload', stepIndex: 0, totalSteps: 4, label: 'Preparing...', percent: 0 }
+    const abort = new AbortController()
+    this.maintenanceAbort = abort
+    this.elapsedTimer = setInterval(() => { this.maintenanceElapsed++ }, 1000)
     try {
       const result = await this.mcp.pushInstallerAndUpgrade({
         action,
         asRoot: !!this.settings.maintenanceAsRoot,
         healthTimeoutMs: this.settings.upgradeHealthTimeoutMs,
+        onProgress: (p) => { this.maintenanceProgress = p },
         reconnectPollMs: this.settings.reconnectPollMs,
         remotePath: this.settings.installerRemotePath,
+        signal: abort.signal,
       })
       this.remoteHealth = result.health
       this.lastMaintenanceAt = new Date().toLocaleString()
@@ -112,11 +124,28 @@ export class BianbuMcpSettingsComponent {
     } catch (error: any) {
       this.lastMaintenanceAt = new Date().toLocaleString()
       this.lastMaintenanceSummary = `session=${this.latestMaintenanceSession?.sessionName || 'unknown'} action=${action} remotePath=${this.settings.installerRemotePath || 'unknown'} logPath=${this.latestMaintenanceSession?.remoteLogPath || 'unknown'} statusPath=${this.latestMaintenanceSession?.remoteStatusPath || 'unknown'}`
-      this.lastError = String(error?.message || error)
-      this.notifications.error(action === 'repair' ? 'Remote repair failed' : 'Remote upgrade failed', this.lastError)
+      if (error?.name === 'AbortError') {
+        this.lastError = 'Operation cancelled by user'
+        this.notifications.info('Maintenance cancelled')
+      } else {
+        const stepLabel = this.maintenanceProgress?.step || 'unknown'
+        this.lastError = `[${stepLabel}] ${String(error?.message || error)}`
+        if (this.maintenanceProgress) {
+          this.maintenanceProgress = { ...this.maintenanceProgress, error: true, label: `Failed at: ${stepLabel}` }
+        }
+        this.notifications.error(action === 'repair' ? 'Remote repair failed' : 'Remote upgrade failed', this.lastError)
+      }
     } finally {
+      clearInterval(this.elapsedTimer)
+      this.elapsedTimer = null
+      this.maintenanceAbort = null
       this.maintenanceBusy = false
+      setTimeout(() => { if (!this.maintenanceBusy) { this.maintenanceProgress = null } }, 5000)
     }
+  }
+
+  cancelMaintenance (): void {
+    this.maintenanceAbort?.abort()
   }
 
   async downloadLocalMaintenanceLog (): Promise<void> {

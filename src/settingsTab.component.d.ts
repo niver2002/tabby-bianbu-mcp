@@ -1,5 +1,6 @@
 import { AppService, ConfigService, NotificationsService, PlatformService } from 'tabby-core';
 import { BianbuMcpService } from './mcp.service';
+import { MaintenanceProgress } from './mcp.service';
 import { RemoteHealthInfo } from './remoteRelease';
 /** @hidden */
 export declare class BianbuMcpSettingsComponent {
@@ -10,12 +11,16 @@ export declare class BianbuMcpSettingsComponent {
     private platform;
     diagnosticsBusy: boolean;
     maintenanceBusy: boolean;
+    maintenanceProgress: MaintenanceProgress | null;
+    maintenanceElapsed: number;
     remoteHealth: RemoteHealthInfo | null;
     lastDiagnosticAt: string;
     lastMaintenanceAt: string;
     lastMaintenanceSummary: string;
     lastError: string;
     advancedVisible: boolean;
+    private maintenanceAbort;
+    private elapsedTimer;
     constructor(config: ConfigService, app: AppService, mcp: BianbuMcpService, notifications: NotificationsService, platform: PlatformService);
     get settings(): any;
     get bundledInstaller(): any | null;
@@ -28,6 +33,7 @@ export declare class BianbuMcpSettingsComponent {
     testConnection(): Promise<void>;
     refreshHealth(notice?: string): Promise<void>;
     pushUpgrade(action?: 'up' | 'repair'): Promise<void>;
+    cancelMaintenance(): void;
     downloadLocalMaintenanceLog(): Promise<void>;
     downloadRemoteMaintenanceLog(): Promise<void>;
     private downloadTextFile;

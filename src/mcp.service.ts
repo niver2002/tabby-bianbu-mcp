@@ -42,17 +42,31 @@ interface WaitForInstallerCompletionOptions {
   expectedServerVersion: string
   intervalMs: number
   logPath: string
+  onPoll?: (elapsed: number, timeout: number) => void
   session: SessionLog
+  signal?: AbortSignal
   statusPath: string
   timeoutMs: number
+}
+
+export interface MaintenanceProgress {
+  step: 'upload' | 'launch' | 'wait' | 'verify'
+  stepIndex: number
+  totalSteps: number
+  label: string
+  percent: number
+  detail?: string
+  error?: boolean
 }
 
 interface PushInstallerAndUpgradeOptions {
   action?: 'bootstrap' | 'repair' | 'up'
   asRoot?: boolean
   healthTimeoutMs?: number
+  onProgress?: (p: MaintenanceProgress) => void
   reconnectPollMs?: number
   remotePath?: string
+  signal?: AbortSignal
 }
 
 type LaneKind = 'interactive' | 'transfer'
@@ -624,7 +638,7 @@ export class BianbuMcpService {
     return this.callTool('upload_chunked_abort', { upload_id: uploadId }, undefined, 'transfer')
   }
 
-  async uploadTextViaChunked (path: string, text: string, asRoot: boolean): Promise<void> {
+  async uploadTextViaChunked (path: string, text: string, asRoot: boolean, onChunkProgress?: (bytesSent: number, bytesTotal: number) => void): Promise<void> {
     const buf = Buffer.from(text, 'utf-8')
     const chunkSize = 32 * 1024
     const begin = await this.uploadChunkedBegin(path, asRoot, buf.length, chunkSize)
@@ -636,6 +650,7 @@ export class BianbuMcpService {
       for (let offset = 0; offset < buf.length; offset += chunkSize) {
         const chunk = buf.subarray(offset, offset + chunkSize)
         await this.uploadChunkedPart(uploadId, chunk.toString('base64'), offset)
+        onChunkProgress?.(Math.min(offset + chunkSize, buf.length), buf.length)
       }
       await this.uploadChunkedFinish(uploadId)
     } catch (err) {
@@ -693,14 +708,22 @@ export class BianbuMcpService {
   private async waitForInstallerCompletion (options: WaitForInstallerCompletionOptions): Promise<{ health: RemoteHealthInfo, status: RemoteInstallerStatus }> {
     const timeoutMs = Math.max(5000, Number(options.timeoutMs || 120000))
     const intervalMs = Math.max(500, Number(options.intervalMs || 2000))
-    const deadline = Date.now() + timeoutMs
+    const startedAt = Date.now()
+    const deadline = startedAt + timeoutMs
     let lastError: any = null
     let lastHealth: RemoteHealthInfo | null = null
     let lastStatus: RemoteInstallerStatus | null = null
+    let consecutiveErrors = 0
 
     while (Date.now() < deadline) {
+      if (options.signal?.aborted) {
+        throw new DOMException('Operation cancelled', 'AbortError')
+      }
+      options.onPoll?.(Date.now() - startedAt, timeoutMs)
+
       try {
         lastHealth = await this.getHealth()
+        consecutiveErrors = 0
         this.logSession(
           options.session,
           'info',
@@ -709,7 +732,11 @@ export class BianbuMcpService {
         )
       } catch (error: any) {
         lastError = error
+        consecutiveErrors++
         this.logSession(options.session, 'warn', 'Remote health poll failed', String(error?.message || error))
+        if (consecutiveErrors >= 10) {
+          throw new Error(`Remote health check failed ${consecutiveErrors} consecutive times. Last error: ${String(error?.message || error)}`)
+        }
         await this.sleep(intervalMs)
         continue
       }
@@ -764,6 +791,11 @@ export class BianbuMcpService {
     const action = options.action || 'up'
     const reconnectPollMs = Number(options.reconnectPollMs ?? this.settings.reconnectPollMs ?? 2000)
     const healthTimeoutMs = Number(options.healthTimeoutMs ?? this.settings.upgradeHealthTimeoutMs ?? 120000)
+    const signal = options.signal
+    const onProgress = options.onProgress
+    const totalSteps = 4
+    const totalBytes = Buffer.byteLength(installer.script, 'utf-8')
+    const formatKB = (b: number) => `${Math.round(b / 1024)}KB`
 
     if (!remotePath) {
       throw new Error('Remote installer path is required')
@@ -776,11 +808,29 @@ export class BianbuMcpService {
     session.remoteStatusPath = statusPath
     this.logSession(session, 'info', 'Starting remote maintenance session', `remote_path=${remotePath} action=${action}`)
 
+    const checkCancel = () => {
+      if (signal?.aborted) {
+        throw new DOMException('Operation cancelled', 'AbortError')
+      }
+    }
+
     try {
+      // Step 1: Upload
+      onProgress?.({ step: 'upload', stepIndex: 0, totalSteps, label: 'Uploading script...', percent: 0 })
+      checkCancel()
       this.logSession(session, 'info', 'Uploading bundled installer to remote host', remotePath)
-      await this.uploadTextViaChunked(remotePath, installer.script, asRoot)
+      await this.uploadTextViaChunked(remotePath, installer.script, asRoot, (sent, total) => {
+        onProgress?.({ step: 'upload', stepIndex: 0, totalSteps, label: `Uploading script (${formatKB(sent)} / ${formatKB(total)})`, percent: Math.round((sent / total) * 30) })
+      })
+
+      // Step 2: Launch
+      checkCancel()
+      onProgress?.({ step: 'launch', stepIndex: 1, totalSteps, label: 'Launching installer...', percent: 30 })
       const start = await this.runCommand(buildDetachedInstallerCommand(remotePath, action, logPath, statusPath, session.sessionName), '.', 30, asRoot)
       this.logSession(session, 'info', 'Detached installer command launched', JSON.stringify(start, null, 2))
+
+      // Step 3: Wait for completion
+      onProgress?.({ step: 'wait', stepIndex: 2, totalSteps, label: 'Waiting for installer...', percent: 40 })
       const { health, status } = await this.waitForInstallerCompletion({
         action,
         asRoot,
@@ -789,10 +839,19 @@ export class BianbuMcpService {
         expectedServerVersion: installer.metadata.serverVersion,
         intervalMs: reconnectPollMs,
         logPath,
+        onPoll: (elapsed, timeout) => {
+          const waitPercent = 40 + Math.round((elapsed / timeout) * 50)
+          const elapsedSec = Math.round(elapsed / 1000)
+          onProgress?.({ step: 'wait', stepIndex: 2, totalSteps, label: `Waiting for installer... (${elapsedSec}s)`, percent: Math.min(waitPercent, 89) })
+        },
         session,
+        signal,
         statusPath,
         timeoutMs: healthTimeoutMs,
       })
+
+      // Step 4: Verify
+      onProgress?.({ step: 'verify', stepIndex: 3, totalSteps, label: 'Verified!', percent: 100 })
       finishSessionLog(session, 'done')
       this.logSession(session, 'info', 'Remote maintenance session finished successfully')
 

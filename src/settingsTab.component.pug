@@ -39,13 +39,36 @@ div(style='padding:20px;display:flex;flex-direction:column;gap:16px;font-family:
       div(style='opacity:.6') Transport: {{ remoteHealth?.transportMode || 'unknown' }}
       div(style='opacity:.6') Last check: {{ lastDiagnosticAt || 'never' }}
 
-    div(*ngIf='lastError', style='margin-top:8px;color:#fca5a5;font-size:12px;white-space:pre-wrap') {{ lastError }}
+    div(*ngIf='lastError', style='margin-top:8px;padding:10px 14px;border-radius:6px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#fca5a5;font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto') {{ lastError }}
 
     div(*ngIf='advancedVisible', style='margin-top:14px')
       div(style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px')
         button.btn.btn-secondary(type='button', (click)='refreshHealth()', [disabled]='diagnosticsBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Fetch health
         button.btn.btn-primary(type='button', (click)='pushUpgrade("up")', [disabled]='maintenanceBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Push upgrade
         button.btn.btn-secondary(type='button', (click)='pushUpgrade("repair")', [disabled]='maintenanceBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Push repair
+
+      //- Progress panel
+      div(*ngIf='maintenanceProgress', style='margin-bottom:14px;padding:12px 16px;border-radius:8px;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.06)')
+        //- Step dots
+        div(style='display:flex;align-items:center;gap:4px;margin-bottom:10px')
+          ng-container(*ngFor='let stepName of ["Upload","Launch","Wait","Verify"]; let i = index')
+            div(style='display:flex;align-items:center;gap:4px')
+              div(style='width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;transition:background .2s', [style.background]='maintenanceProgress.error && i === maintenanceProgress.stepIndex ? "rgba(239,68,68,.8)" : i < maintenanceProgress.stepIndex ? "rgba(74,222,128,.7)" : i === maintenanceProgress.stepIndex ? "rgba(59,130,246,.8)" : "rgba(255,255,255,.08)"', [style.color]='i <= maintenanceProgress.stepIndex ? "white" : "rgba(255,255,255,.3)"')
+                span(*ngIf='!maintenanceProgress.error && i < maintenanceProgress.stepIndex') ✓
+                span(*ngIf='maintenanceProgress.error && i === maintenanceProgress.stepIndex') ✗
+                span(*ngIf='!(maintenanceProgress.error && i === maintenanceProgress.stepIndex) && !(i < maintenanceProgress.stepIndex)') {{ i + 1 }}
+              span(style='font-size:10px;margin-right:4px', [style.opacity]='i === maintenanceProgress.stepIndex ? ".9" : ".4"') {{ stepName }}
+            div(*ngIf='i < 3', style='width:16px;height:1px;background:rgba(255,255,255,.15);margin:0 2px')
+        //- Progress bar
+        div(style='height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;margin-bottom:8px')
+          div(style='height:100%;border-radius:2px;transition:width .3s ease', [style.width.%]='maintenanceProgress.percent', [style.background]='maintenanceProgress.error ? "#f87171" : maintenanceProgress.percent >= 100 ? "#4ade80" : "#3b82f6"')
+        //- Status row
+        div(style='display:flex;justify-content:space-between;align-items:center')
+          span(style='font-size:12px;opacity:.8') {{ maintenanceProgress.label }}
+          span(style='font-size:11px;opacity:.45') {{ maintenanceElapsed }}s
+        //- Cancel button
+        div(*ngIf='maintenanceBusy', style='margin-top:10px;text-align:right')
+          button.btn.btn-sm(type='button', (click)='cancelMaintenance()', style='font-size:11px;padding:3px 14px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:4px') Cancel
 
       div(*ngIf='lastMaintenanceAt', style='font-size:11px;opacity:.6;margin-bottom:8px')
         div Last maintenance: {{ lastMaintenanceAt }}
