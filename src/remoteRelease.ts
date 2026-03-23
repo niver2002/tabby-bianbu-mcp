@@ -50,18 +50,10 @@ export function normalizeMcpUrl (value: string): string {
 
 export function validateConnectionSettings (settings: any): string[] {
   const errors: string[] = []
-  const url = normalizeMcpUrl(settings?.url || '')
-  if (!url) {
-    errors.push('MCP URL is required')
-  } else {
-    try {
-      const parsed = new URL(url)
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        errors.push('MCP URL must start with http:// or https://')
-      }
-    } catch {
-      errors.push('MCP URL is not a valid URL')
-    }
+  if (!settings.domain) {
+    errors.push('MCP domain is required')
+  } else if (/^https?:\/\//i.test(settings.domain)) {
+    errors.push('Domain should not include https:// prefix')
   }
   if (!String(settings?.apiKey || '').trim()) {
     errors.push('X-API-KEY is required')

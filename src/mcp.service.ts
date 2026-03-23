@@ -3,7 +3,6 @@ import { ConfigService } from 'tabby-core'
 import {
   buildDetachedInstallerCommand,
   loadBundledInstaller,
-  normalizeMcpUrl,
   parseRemoteHealth,
   parseRemoteInstallerStatus,
   RemoteHealthInfo,
@@ -77,11 +76,14 @@ class RequestLane {
   private waiters: Array<(item: LaneItem<any>) => void> = []
   private started = false
   private stopped = false
+  private currentCadenceMs: number
 
   constructor (
     private concurrency: number,
-    private cadenceMs: number,
-  ) { }
+    private baseCadenceMs: number,
+  ) {
+    this.currentCadenceMs = baseCadenceMs
+  }
 
   stop (): void {
     this.stopped = true
@@ -152,6 +154,14 @@ class RequestLane {
     return new Promise(resolve => this.waiters.push(resolve))
   }
 
+  notifyThrottled (): void {
+    this.currentCadenceMs = Math.min(this.baseCadenceMs * 4 || 2000, Math.max(200, this.currentCadenceMs * 2))
+  }
+
+  notifySuccess (): void {
+    this.currentCadenceMs = Math.max(0, this.currentCadenceMs - 10)
+  }
+
   private async workerLoop (): Promise<void> {
     while (!this.stopped) {
       const item = await this.take()
@@ -165,15 +175,19 @@ class RequestLane {
         try {
           const result = await item.run()
           item.resolve(result)
+          this.currentCadenceMs = Math.max(0, this.currentCadenceMs - 10)
         } catch (error: any) {
           item.reject(error)
+          if (/429|too many/i.test(String(error?.message || ''))) {
+            this.currentCadenceMs = Math.min(this.baseCadenceMs * 4 || 2000, Math.max(200, this.currentCadenceMs * 2))
+          }
         } finally {
           item.cleanup()
         }
       }
 
-      if (this.cadenceMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, this.cadenceMs))
+      if (this.currentCadenceMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, this.currentCadenceMs))
       }
     }
   }
@@ -182,9 +196,9 @@ class RequestLane {
 @Injectable()
 export class BianbuMcpService {
   private bundledInstallerCache: RemoteInstallerAsset | null = null
-  private interactiveLane = new RequestLane(2, 100)
+  private interactiveLane = new RequestLane(2, 0)
   private latestMaintenanceSessionValue: SessionLog | null = null
-  private transferLane = new RequestLane(30, 100)
+  private transferLane = new RequestLane(30, 0)
   private schedulerKey = ''
 
   constructor (
@@ -207,7 +221,11 @@ export class BianbuMcpService {
   }
 
   get normalizedUrl (): string {
-    return normalizeMcpUrl(this.settings.url || '')
+    const s = this.settings
+    if (!s.domain) return ''
+    const domain = String(s.domain || '').trim().replace(/^https?:\/\//i, '').replace(/\/mcp\/?$/i, '').replace(/\/+$/, '')
+    if (!domain) return ''
+    return `https://${domain}/mcp`
   }
 
   get latestMaintenanceSession (): SessionLog | null {
@@ -217,7 +235,7 @@ export class BianbuMcpService {
   private ensureScheduler (): void {
     const interactiveConcurrency = Math.max(1, Number(this.settings.interactiveConcurrency ?? 2))
     const transferConcurrency = Math.max(1, Number(this.settings.transferConcurrency ?? 30))
-    const workerCadenceMs = Math.max(10, Number(this.settings.workerCadenceMs ?? 100))
+    const workerCadenceMs = Math.max(0, Number(this.settings.workerCadenceMs ?? 0))
     const nextKey = `${interactiveConcurrency}:${transferConcurrency}:${workerCadenceMs}`
     if (nextKey === this.schedulerKey) {
       return

@@ -15,6 +15,7 @@ export declare class BianbuMcpSettingsComponent {
     lastMaintenanceAt: string;
     lastMaintenanceSummary: string;
     lastError: string;
+    advancedVisible: boolean;
     constructor(config: ConfigService, app: AppService, mcp: BianbuMcpService, notifications: NotificationsService, platform: PlatformService);
     get settings(): any;
     get bundledInstaller(): any | null;

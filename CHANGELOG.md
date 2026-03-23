@@ -2,6 +2,36 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.6.0] - 2026-03-23
+
+### Added
+- **adaptive request throttling**: `RequestLane` now starts at zero cadence and auto-backs-off only when the server returns 429 / rate-limit errors, then gradually recovers to zero delay on success
+- **concurrent file transfers**: up to 3 files now upload/download in parallel (configurable via `maxConcurrentFiles`)
+- **enhanced shell line editor**: cursor movement (←→), command history (↑↓), Home/End, Delete key, Ctrl+A/E/U/K/W/L shortcuts
+- **colorized shell output**: stderr renders in red, non-zero exit codes in yellow, prompt in bold blue
+- **running indicator**: shell shows `⏳ Running...` during command execution
+- **file manager sort**: click column headers (Name, Size, Modified, Type) to sort; folders always appear first
+- **file manager multi-select**: Ctrl+Click to toggle, Shift+Click for range selection
+- **file type icons**: emoji icons for 50+ file extensions (📁📜🐍📋📦🖼️🎵🎬 etc.)
+- **formatted file sizes**: human-readable display (B, KB, MB, GB)
+- **date column**: shows file modification timestamps
+- **status bar**: shows item count, selection summary, and total size
+- **detail pane toggle**: hide/show the preview panel to maximize file list space
+- **URL domain input**: settings page now shows `https://` [domain] `/mcp` — user only needs to paste the domain
+
+### Changed
+- **upload chunk default**: 32 KiB → 64 KiB (halves HTTP round-trips)
+- **download chunk default**: 128 KiB → 256 KiB
+- **worker cadence default**: 100ms → 0ms (adaptive throttling handles rate-limiting)
+- **download pipeline**: independent flusher coroutine eliminates head-of-line blocking where all workers stalled waiting for ordered disk writes
+- **file manager UI**: complete redesign with Windows 11 Fluent-inspired dark theme (Mica-style backdrop, rounded corners, segmented toolbar, immersive layout)
+- **settings page**: simplified from 6 cards to 3 focused sections; advanced settings in collapsible areas; MCP snippet now masks the API key
+- **config field**: `url` replaced by `domain` — existing `url` values are auto-migrated on first load
+
+### Removed
+- `settings.enabled` config (removed in 0.5.4, cleanup completed)
+- `minIntervalMs` config (replaced by adaptive cadence)
+
 ## [0.5.4] - 2026-03-23
 
 ### Fixed

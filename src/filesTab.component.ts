@@ -54,6 +54,13 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
   private transferQueue: Array<() => Promise<void>> = []
   private transferQueueRunning = false
 
+  sortKey: 'name' | 'size' | 'date' | 'type' = 'name'
+  sortAsc = true
+  selectedIndices = new Set<number>()
+  lastClickIndex = -1
+  detailPaneVisible = true
+  advancedTransfersExpanded = false
+
   constructor (
     injector: Injector,
     private mcp: BianbuMcpService,
@@ -196,9 +203,30 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
       const name = this.baseName(item.path).toLowerCase()
       return !q || name.includes(q) || item.path.toLowerCase().includes(q)
     })
+    this.sortItems()
     if (this.selectedIndex >= this.filteredItems.length) {
       this.selectedIndex = this.filteredItems.length - 1
     }
+  }
+
+  sortItems (): void {
+    this.filteredItems.sort((a: any, b: any) => {
+      if (a.is_dir && !b.is_dir) return -1
+      if (!a.is_dir && b.is_dir) return 1
+      let cmp = 0
+      switch (this.sortKey) {
+        case 'name': cmp = this.baseName(a.path).localeCompare(this.baseName(b.path)); break
+        case 'size': cmp = (a.size || 0) - (b.size || 0); break
+        case 'date': cmp = (a.modified || '').localeCompare(b.modified || ''); break
+        case 'type': {
+          const ea = a.is_dir ? '' : (a.path.split('.').pop() || '')
+          const eb = b.is_dir ? '' : (b.path.split('.').pop() || '')
+          cmp = ea.localeCompare(eb)
+          break
+        }
+      }
+      return this.sortAsc ? cmp : -cmp
+    })
   }
 
   navigateToInput (): void {
@@ -272,8 +300,21 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     this.selectedIndex = Math.max(0, Math.min(this.filteredItems.length - 1, this.selectedIndex + delta))
   }
 
-  selectItem (item: any): void {
-    this.selectedIndex = this.filteredItems.indexOf(item)
+  selectItem (item: any, event?: MouseEvent): void {
+    const idx = this.filteredItems.indexOf(item)
+    if (event?.ctrlKey || event?.metaKey) {
+      if (this.selectedIndices.has(idx)) { this.selectedIndices.delete(idx) }
+      else { this.selectedIndices.add(idx) }
+    } else if (event?.shiftKey && this.lastClickIndex >= 0) {
+      const lo = Math.min(this.lastClickIndex, idx)
+      const hi = Math.max(this.lastClickIndex, idx)
+      for (let i = lo; i <= hi; i++) { this.selectedIndices.add(i) }
+    } else {
+      this.selectedIndices.clear()
+      this.selectedIndices.add(idx)
+    }
+    this.lastClickIndex = idx
+    this.selectedIndex = idx
   }
 
   async openItem (item: any): Promise<void> {
@@ -572,13 +613,23 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
     this.transferQueueRunning = true
     try {
-      while (this.transferQueue.length) {
-        const job = this.transferQueue.shift()
-        if (!job) {
-          continue
+      const maxConcurrent = Math.max(1, Number(this.mcp.settings.maxConcurrentFiles ?? 3))
+      const active: Promise<void>[] = []
+      const drain = async (): Promise<void> => {
+        while (this.transferQueue.length || active.length) {
+          while (active.length < maxConcurrent && this.transferQueue.length) {
+            const job = this.transferQueue.shift()
+            if (!job) continue
+            const p = job().finally(() => {
+              const idx = active.indexOf(p)
+              if (idx >= 0) active.splice(idx, 1)
+            })
+            active.push(p)
+          }
+          if (active.length) await Promise.race(active)
         }
-        await job()
       }
+      await drain()
     } finally {
       this.transferQueueRunning = false
     }
@@ -669,8 +720,8 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
       const workerCount = Math.max(1, Math.min(Number(this.mcp.settings.transferConcurrency ?? 30), offsets.length || 1))
       const pending = new Map<number, Uint8Array>()
       let nextWriteOffset = 0
-      let flushChain = Promise.resolve()
       let firstError: any = null
+      let workersFinished = false
 
       const flushPending = async (): Promise<void> => {
         while (pending.has(nextWriteOffset)) {
@@ -680,6 +731,16 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
           nextWriteOffset += bytes.length
         }
       }
+
+      const flusher = (async (): Promise<void> => {
+        while (!workersFinished || pending.size > 0) {
+          await flushPending()
+          if (!workersFinished || pending.size > 0) {
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+        await flushPending()
+      })()
 
       const workers = Array.from({ length: workerCount }, async () => {
         while (!transfer.controller?.signal.aborted) {
@@ -695,8 +756,6 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
             const bytes = this.base64ToUint8(part.content_base64)
             pending.set(offset, bytes)
             transfer.bytesDone += bytes.length
-            flushChain = flushChain.then(() => flushPending())
-            await flushChain
           } catch (error: any) {
             firstError = firstError || error
             return
@@ -705,7 +764,8 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
       })
 
       await Promise.all(workers)
-      await flushChain
+      workersFinished = true
+      await flusher
       if (transfer.controller?.signal.aborted) {
         await this.mcp.downloadChunkedClose(session.download_id).catch(() => null)
         sink.close()
@@ -734,6 +794,86 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
         this.status = transfer.error
       }
     }
+  }
+
+  formatSize (bytes: number | null | undefined): string {
+    if (bytes == null) return '—'
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`
+    return `${(bytes / 1073741824).toFixed(2)} GB`
+  }
+
+  formatDate (iso: string | null | undefined): string {
+    if (!iso) return '—'
+    try {
+      const d = new Date(iso)
+      if (isNaN(d.getTime())) return '—'
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    } catch { return '—' }
+  }
+
+  fileIcon (item: any): string {
+    if (item.is_dir) return '📁'
+    const ext = (item.path.split('.').pop() || '').toLowerCase()
+    const icons: Record<string, string> = {
+      js: '📜', ts: '📜', mjs: '📜', jsx: '📜', tsx: '📜',
+      py: '🐍', sh: '⚙️', bash: '⚙️',
+      json: '📋', yaml: '📋', yml: '📋', toml: '📋', xml: '📋',
+      md: '📝', txt: '📄', csv: '📊',
+      html: '🌐', css: '🎨', scss: '🎨',
+      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🖼️', webp: '🖼️', ico: '🖼️',
+      zip: '📦', tar: '📦', gz: '📦', bz2: '📦', xz: '📦', '7z': '📦', rar: '📦',
+      pdf: '📕', doc: '📘', docx: '📘', xls: '📗', xlsx: '📗', ppt: '📙', pptx: '📙',
+      mp3: '🎵', wav: '🎵', flac: '🎵', ogg: '🎵',
+      mp4: '🎬', mkv: '🎬', avi: '🎬', mov: '🎬', webm: '🎬',
+      c: '📜', cpp: '📜', h: '📜', hpp: '📜', java: '📜', go: '📜', rs: '📜', rb: '📜', php: '📜',
+      sql: '🗃️', db: '🗃️', sqlite: '🗃️',
+      log: '📃', ini: '⚙️', cfg: '⚙️', conf: '⚙️', env: '🔒',
+      key: '🔑', pem: '🔑', crt: '🔑',
+    }
+    return icons[ext] || '📄'
+  }
+
+  fileType (item: any): string {
+    if (item.is_dir) return 'Folder'
+    const ext = (item.path.split('.').pop() || '').toLowerCase()
+    if (!ext || ext === item.path) return 'File'
+    return ext.toUpperCase()
+  }
+
+  toggleSort (key: 'name' | 'size' | 'date' | 'type'): void {
+    if (this.sortKey === key) {
+      this.sortAsc = !this.sortAsc
+    } else {
+      this.sortKey = key
+      this.sortAsc = true
+    }
+    this.sortItems()
+  }
+
+  sortIndicator (key: string): string {
+    if (this.sortKey !== key) return ''
+    return this.sortAsc ? ' ▲' : ' ▼'
+  }
+
+  get totalSize (): string {
+    const total = this.filteredItems.reduce((sum: number, item: any) => sum + (item.size || 0), 0)
+    return this.formatSize(total)
+  }
+
+  get selectionSummary (): string {
+    const count = this.selectedIndices.size
+    if (count <= 1) return ''
+    return `${count} selected`
+  }
+
+  isSelected (index: number): boolean {
+    return this.selectedIndices.has(index)
+  }
+
+  toggleDetailPane (): void {
+    this.detailPaneVisible = !this.detailPaneVisible
   }
 
   private clearPreview (): void {

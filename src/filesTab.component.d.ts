@@ -48,6 +48,12 @@ export declare class BianbuCloudFilesTabComponent extends BaseTabComponent {
     private transferSeq;
     private transferQueue;
     private transferQueueRunning;
+    sortKey: 'name' | 'size' | 'date' | 'type';
+    sortAsc: boolean;
+    selectedIndices: Set<number>;
+    lastClickIndex: number;
+    detailPaneVisible: boolean;
+    advancedTransfersExpanded: boolean;
     constructor(injector: Injector, mcp: BianbuMcpService, notifications: NotificationsService, platform: PlatformService);
     ngOnInit(): void;
     get breadcrumbs(): string[];
@@ -56,6 +62,7 @@ export declare class BianbuCloudFilesTabComponent extends BaseTabComponent {
     onKeyDown(event: KeyboardEvent): void;
     refresh(): Promise<void>;
     applyFilter(): void;
+    sortItems(): void;
     navigateToInput(): void;
     navigate(path: string, pushHistory?: boolean): void;
     navigateBreadcrumb(index: number): void;
@@ -63,7 +70,7 @@ export declare class BianbuCloudFilesTabComponent extends BaseTabComponent {
     goForward(): void;
     goUp(): void;
     moveSelection(delta: number): void;
-    selectItem(item: any): void;
+    selectItem(item: any, event?: MouseEvent): void;
     openItem(item: any): Promise<void>;
     saveSelected(): Promise<void>;
     openCreateDirectoryPrompt(): void;
@@ -93,6 +100,16 @@ export declare class BianbuCloudFilesTabComponent extends BaseTabComponent {
     private pumpTransferQueue;
     private runUploadTransfer;
     private runDownloadTransfer;
+    formatSize(bytes: number | null | undefined): string;
+    formatDate(iso: string | null | undefined): string;
+    fileIcon(item: any): string;
+    fileType(item: any): string;
+    toggleSort(key: 'name' | 'size' | 'date' | 'type'): void;
+    sortIndicator(key: string): string;
+    get totalSize(): string;
+    get selectionSummary(): string;
+    isSelected(index: number): boolean;
+    toggleDetailPane(): void;
     private clearPreview;
     baseName(path: string): string;
     private isTextLike;

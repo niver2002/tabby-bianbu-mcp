@@ -1,120 +1,107 @@
-div(style='padding: 20px; display:flex; flex-direction:column; gap:16px')
-  .hero(style='padding:18px; border-radius:12px; background:linear-gradient(135deg, rgba(25,53,103,.9), rgba(17,94,89,.85)); color:white')
-    h2(style='margin:0 0 8px 0') Bianbu MCP
-    p(style='margin:0; opacity:.92')
-      | Configure your Bianbu Cloud MCP endpoint, validate remote health, and push the latest bundled installer directly from Tabby.
+div(style='padding:20px;display:flex;flex-direction:column;gap:16px;font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;max-width:720px')
+  //- Header
+  div(style='padding:16px 20px;border-radius:10px;background:linear-gradient(135deg,rgba(25,53,103,.9),rgba(17,94,89,.85));color:white')
+    h2(style='margin:0 0 4px 0;font-size:18px;font-weight:600') Bianbu MCP
+    p(style='margin:0;opacity:.85;font-size:13px') Connect to your Bianbu Cloud VM via MCP.
 
-  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Quick actions
-    div(style='display:flex; gap:12px; flex-wrap:wrap')
-      button.btn.btn-primary(type='button', (click)='openShell()') Open Bianbu Cloud Shell
-      button.btn.btn-secondary(type='button', (click)='openFiles()') Open Bianbu Cloud Files
-      button.btn.btn-secondary(type='button', (click)='testConnection()', [disabled]='diagnosticsBusy || validationErrors.length > 0') Test connection
-      button.btn.btn-secondary(type='button', (click)='refreshHealth()', [disabled]='diagnosticsBusy || validationErrors.length > 0') Fetch remote health
+  //- Connection
+  .card(style='padding:16px 20px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)')
+    h3(style='margin:0 0 14px 0;font-size:14px;font-weight:600') Connection
+    .field(style='display:flex;align-items:center;gap:8px;margin-bottom:10px')
+      label(style='width:80px;font-size:12px;opacity:.7;flex-shrink:0') Name
+      input.form-control(type='text', [(ngModel)]='settings.name', (ngModelChange)='save()', placeholder='bianbu', style='flex:1;max-width:180px')
+    .field(style='display:flex;align-items:center;gap:0;margin-bottom:10px')
+      label(style='width:80px;font-size:12px;opacity:.7;flex-shrink:0') Endpoint
+      span(style='background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-right:none;border-radius:6px 0 0 6px;padding:5px 10px;font-size:12px;color:#93c5fd;white-space:nowrap') https://
+      input.form-control(type='text', [(ngModel)]='settings.domain', (ngModelChange)='save()', placeholder='your-domain.example.com', style='flex:1;border-radius:0;border-left:none;border-right:none')
+      span(style='background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-left:none;border-radius:0 6px 6px 0;padding:5px 10px;font-size:12px;color:#93c5fd;white-space:nowrap') /mcp
+    .field(style='display:flex;align-items:center;gap:8px;margin-bottom:14px')
+      label(style='width:80px;font-size:12px;opacity:.7;flex-shrink:0') API Key
+      input.form-control(type='password', [(ngModel)]='settings.apiKey', (ngModelChange)='save()', placeholder='your-x-api-key', style='flex:1')
 
-  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Connection settings
-    .grid(style='display:grid; grid-template-columns: 190px 1fr; gap:12px; align-items:center')
-      label Profile name
-      input.form-control(type='text', [(ngModel)]='settings.name', (ngModelChange)='save()', placeholder='bianbu')
+    div(style='display:flex;gap:8px;flex-wrap:wrap')
+      button.btn.btn-primary(type='button', (click)='testConnection()', [disabled]='diagnosticsBusy || validationErrors.length > 0', style='font-size:12px;padding:5px 14px') Test connection
+      button.btn.btn-secondary(type='button', (click)='openShell()', style='font-size:12px;padding:5px 14px') Open Shell
+      button.btn.btn-secondary(type='button', (click)='openFiles()', style='font-size:12px;padding:5px 14px') Open Files
 
-      label MCP URL
-      input.form-control(type='text', [(ngModel)]='settings.url', (ngModelChange)='save()', placeholder='https://your-domain.example.com/mcp')
+    div(*ngIf='validationErrors.length', style='margin-top:10px;color:#fca5a5;font-size:12px')
+      div(*ngFor='let e of validationErrors') ⚠ {{ e }}
 
-      label X-API-KEY
-      input.form-control(type='password', [(ngModel)]='settings.apiKey', (ngModelChange)='save()', placeholder='your-x-api-key')
+  //- Remote Status
+  .card(style='padding:16px 20px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)')
+    div(style='display:flex;align-items:center;cursor:pointer', (click)='advancedVisible = !advancedVisible')
+      h3(style='margin:0;font-size:14px;font-weight:600;flex:1') Remote status & maintenance
+      span(style='opacity:.5;font-size:12px') {{ advancedVisible ? '▼' : '▶' }}
 
-      label Interactive slots
-      input.form-control(type='number', min='1', step='1', [(ngModel)]='settings.interactiveConcurrency', (ngModelChange)='save()')
+    div(*ngIf='remoteHealth || lastError', style='margin-top:12px;display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:12px')
+      div(style='opacity:.6') Script: {{ remoteHealth?.scriptVersion || 'unknown' }}
+      div(style='opacity:.6') Server: {{ remoteHealth?.serverVersion || 'unknown' }}
+      div(style='opacity:.6') Transport: {{ remoteHealth?.transportMode || 'unknown' }}
+      div(style='opacity:.6') Last check: {{ lastDiagnosticAt || 'never' }}
 
-      label Transfer slots
-      input.form-control(type='number', min='1', max='30', step='1', [(ngModel)]='settings.transferConcurrency', (ngModelChange)='save()')
+    div(*ngIf='lastError', style='margin-top:8px;color:#fca5a5;font-size:12px;white-space:pre-wrap') {{ lastError }}
 
-      label Worker cadence (ms)
-      input.form-control(type='number', min='10', step='10', [(ngModel)]='settings.workerCadenceMs', (ngModelChange)='save()')
+    div(*ngIf='advancedVisible', style='margin-top:14px')
+      div(style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px')
+        button.btn.btn-secondary(type='button', (click)='refreshHealth()', [disabled]='diagnosticsBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Fetch health
+        button.btn.btn-primary(type='button', (click)='pushUpgrade("up")', [disabled]='maintenanceBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Push upgrade
+        button.btn.btn-secondary(type='button', (click)='pushUpgrade("repair")', [disabled]='maintenanceBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Push repair
 
-      label Max retries
-      input.form-control(type='number', min='0', [(ngModel)]='settings.maxRetries', (ngModelChange)='save()')
+      div(*ngIf='lastMaintenanceAt', style='font-size:11px;opacity:.6;margin-bottom:8px')
+        div Last maintenance: {{ lastMaintenanceAt }}
+        div(*ngIf='latestMaintenanceSession') Session: {{ latestMaintenanceSession.sessionName }}
 
-      label Retry base (ms)
-      input.form-control(type='number', min='0', [(ngModel)]='settings.retryBaseMs', (ngModelChange)='save()')
+      div(*ngIf='latestMaintenanceSession', style='display:flex;gap:8px;margin-bottom:12px')
+        button.btn.btn-secondary(type='button', (click)='downloadLocalMaintenanceLog()', [disabled]='maintenanceBusy', style='font-size:11px;padding:4px 12px') Local log
+        button.btn.btn-secondary(type='button', (click)='downloadRemoteMaintenanceLog()', [disabled]='maintenanceBusy || validationErrors.length > 0', style='font-size:11px;padding:4px 12px') Remote log
 
-      label Upload chunk (bytes)
-      input.form-control(type='number', min='16384', step='1024', [(ngModel)]='settings.uploadChunkBytes', (ngModelChange)='save()')
+      div(*ngIf='remoteHealth', style='margin-top:8px;font-size:11px;opacity:.5')
+        div FILE_ROOT: {{ remoteHealth.fileRoot || 'unknown' }}
+        div Bundled installer: script={{ bundledInstaller?.scriptVersion || '?' }} server={{ bundledInstaller?.serverVersion || '?' }}
+        div Capabilities: rename={{ remoteHealth.supports?.renamePath ? '✓' : '✗' }} shell={{ remoteHealth.supports?.shellSession ? '✓' : '✗' }} chunked={{ remoteHealth.supports?.chunkedTransfers ? '✓' : '✗' }} parallel={{ remoteHealth.supports?.parallelChunkOffsets ? '✓' : '✗' }}
 
-      label Download chunk (bytes)
-      input.form-control(type='number', min='16384', step='1024', [(ngModel)]='settings.downloadChunkBytes', (ngModelChange)='save()')
+      //- Maintenance settings
+      .grid(style='display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:center;margin-top:12px;font-size:12px')
+        label(style='opacity:.6') Installer path
+        input.form-control(type='text', [(ngModel)]='settings.installerRemotePath', (ngModelChange)='save()', style='font-size:12px')
+        label(style='opacity:.6') As root
+        input(type='checkbox', [(ngModel)]='settings.maintenanceAsRoot', (ngModelChange)='save()')
+        label(style='opacity:.6') Reconnect poll (ms)
+        input.form-control(type='number', min='500', [(ngModel)]='settings.reconnectPollMs', (ngModelChange)='save()', style='font-size:12px;max-width:120px')
+        label(style='opacity:.6') Health timeout (ms)
+        input.form-control(type='number', min='5000', [(ngModel)]='settings.upgradeHealthTimeoutMs', (ngModelChange)='save()', style='font-size:12px;max-width:120px')
 
-      label Notes
-      textarea.form-control(rows='3', [(ngModel)]='settings.notes', (ngModelChange)='save()', placeholder='Optional notes')
+  //- Advanced settings (collapsed by default)
+  .card(style='padding:16px 20px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)')
+    div(style='display:flex;align-items:center;cursor:pointer', (click)='advancedVisible = advancedVisible')
+      h3(style='margin:0;font-size:14px;font-weight:600;flex:1') Performance tuning
+      span(style='opacity:.5;font-size:12px')
 
-  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Remote maintenance
-    .grid(style='display:grid; grid-template-columns: 190px 1fr; gap:12px; align-items:center')
-      label Installer remote path
-      input.form-control(type='text', [(ngModel)]='settings.installerRemotePath', (ngModelChange)='save()', placeholder='/tmp/bianbu_agent_proxy.sh')
+    .grid(style='display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:center;margin-top:12px;font-size:12px')
+      label(style='opacity:.6') Interactive slots
+      input.form-control(type='number', min='1', step='1', [(ngModel)]='settings.interactiveConcurrency', (ngModelChange)='save()', style='font-size:12px;max-width:100px')
+      label(style='opacity:.6') Transfer slots
+      input.form-control(type='number', min='1', max='30', step='1', [(ngModel)]='settings.transferConcurrency', (ngModelChange)='save()', style='font-size:12px;max-width:100px')
+      label(style='opacity:.6') Concurrent files
+      input.form-control(type='number', min='1', max='10', step='1', [(ngModel)]='settings.maxConcurrentFiles', (ngModelChange)='save()', style='font-size:12px;max-width:100px')
+      label(style='opacity:.6') Worker cadence (ms)
+      input.form-control(type='number', min='0', step='10', [(ngModel)]='settings.workerCadenceMs', (ngModelChange)='save()', style='font-size:12px;max-width:100px')
+      label(style='opacity:.6') Max retries
+      input.form-control(type='number', min='0', [(ngModel)]='settings.maxRetries', (ngModelChange)='save()', style='font-size:12px;max-width:100px')
+      label(style='opacity:.6') Retry base (ms)
+      input.form-control(type='number', min='0', [(ngModel)]='settings.retryBaseMs', (ngModelChange)='save()', style='font-size:12px;max-width:100px')
+      label(style='opacity:.6') Upload chunk (bytes)
+      input.form-control(type='number', min='16384', step='1024', [(ngModel)]='settings.uploadChunkBytes', (ngModelChange)='save()', style='font-size:12px;max-width:120px')
+      label(style='opacity:.6') Download chunk (bytes)
+      input.form-control(type='number', min='16384', step='1024', [(ngModel)]='settings.downloadChunkBytes', (ngModelChange)='save()', style='font-size:12px;max-width:120px')
+      label(style='opacity:.6') Notes
+      textarea.form-control(rows='2', [(ngModel)]='settings.notes', (ngModelChange)='save()', placeholder='Optional notes', style='font-size:12px')
 
-      label Maintenance as root
-      input(type='checkbox', [(ngModel)]='settings.maintenanceAsRoot', (ngModelChange)='save()')
+  //- MCP Snippet
+  .card(style='padding:16px 20px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)')
+    h3(style='margin:0 0 8px 0;font-size:14px;font-weight:600') Copyable MCP snippet
+    pre(style='white-space:pre-wrap;margin:0;font-size:12px;opacity:.85;background:rgba(0,0,0,.2);padding:12px;border-radius:6px') {{ sampleJson }}
 
-      label Reconnect poll (ms)
-      input.form-control(type='number', min='500', [(ngModel)]='settings.reconnectPollMs', (ngModelChange)='save()')
-
-      label Health timeout (ms)
-      input.form-control(type='number', min='5000', [(ngModel)]='settings.upgradeHealthTimeoutMs', (ngModelChange)='save()')
-
-    div(style='display:flex; gap:12px; flex-wrap:wrap; margin-top:16px')
-      button.btn.btn-primary(type='button', (click)='pushUpgrade("up")', [disabled]='maintenanceBusy || validationErrors.length > 0') Push latest installer + upgrade
-      button.btn.btn-secondary(type='button', (click)='pushUpgrade("repair")', [disabled]='maintenanceBusy || validationErrors.length > 0') Push latest installer + repair
-
-    div(*ngIf='lastMaintenanceAt', style='margin-top:12px; color:#cbd5e1')
-      b Last maintenance:
-      |  {{ lastMaintenanceAt }}
-      br
-      span {{ lastMaintenanceSummary }}
-      div(*ngIf='latestMaintenanceSession', style='margin-top:8px')
-        div Session: {{ latestMaintenanceSession.sessionName }}
-        div(style='display:flex; gap:12px; flex-wrap:wrap; margin-top:8px')
-          button.btn.btn-secondary(type='button', (click)='downloadLocalMaintenanceLog()', [disabled]='maintenanceBusy') Download local session log
-          button.btn.btn-secondary(type='button', (click)='downloadRemoteMaintenanceLog()', [disabled]='maintenanceBusy || validationErrors.length > 0') Download remote session log
-
-  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Release diagnostics
-    div(style='display:grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap:12px')
-      div(style='padding:12px; border-radius:10px; background:rgba(255,255,255,0.02)')
-        b Bundled installer
-        div(style='margin-top:8px; opacity:.9') Script version: {{ bundledInstaller?.scriptVersion || 'unavailable' }}
-        div(style='opacity:.9') Server version: {{ bundledInstaller?.serverVersion || 'unavailable' }}
-        div(style='opacity:.9') SHA-256: {{ bundledInstaller?.sha256 || 'unavailable' }}
-      div(style='padding:12px; border-radius:10px; background:rgba(255,255,255,0.02)')
-        b Remote status
-        div(style='margin-top:8px; opacity:.9') Remote script version: {{ remoteHealth?.scriptVersion || 'unknown' }}
-        div(style='opacity:.9') Remote server version: {{ remoteHealth?.serverVersion || 'unknown' }}
-        div(style='opacity:.9') Transport: {{ remoteHealth?.transportMode || 'unknown' }}
-        div(style='opacity:.9') FILE_ROOT: {{ remoteHealth?.fileRoot || 'unknown' }}
-        div(style='opacity:.9') Supports rename_path: {{ remoteHealth?.supports?.renamePath ? 'yes' : 'no' }}
-        div(style='opacity:.9') Supports shell sessions: {{ remoteHealth?.supports?.shellSession ? 'yes' : 'no' }}
-        div(style='opacity:.9') Supports chunked transfers: {{ remoteHealth?.supports?.chunkedTransfers ? 'yes' : 'no' }}
-        div(style='opacity:.9') Supports parallel chunk offsets: {{ remoteHealth?.supports?.parallelChunkOffsets ? 'yes' : 'no' }}
-        div(style='opacity:.9') Last diagnostic: {{ lastDiagnosticAt || 'never' }}
-
-    div(*ngIf='validationErrors.length', style='margin-top:16px; color:#fca5a5')
-      b Configuration issues
-      ul(style='margin:8px 0 0 18px')
-        li(*ngFor='let error of validationErrors') {{ error }}
-
-    div(*ngIf='lastError', style='margin-top:16px; color:#fca5a5; white-space:pre-wrap')
-      b Last error
-      div(style='margin-top:8px') {{ lastError }}
-
-  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Copyable MCP snippet
-    pre(style='white-space: pre-wrap; margin-bottom:0') {{ sampleJson }}
-
-  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
-    h3(style='margin-top:0') Reminder
-    ul(style='margin-bottom:0')
-      li MCP URL is typically #[code https://&lt;domain&gt;/mcp]
-      li #[code X-API-KEY] is copied from the Bianbu Cloud API Key page
-      li Push-upgrade uploads the bundled installer to the configured remote path, launches it remotely, then waits for health to recover
-      li Shell and Files tabs are UI views backed by MCP calls, not native SSH/SFTP transport
+  //- Tips
+  div(style='font-size:11px;opacity:.4;padding:4px 0')
+    | 💡 MCP URL = https://‹domain›/mcp • API key from Bianbu Cloud console • Shell and Files are MCP-backed, not SSH/SFTP

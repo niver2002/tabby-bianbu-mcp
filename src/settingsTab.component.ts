@@ -17,6 +17,7 @@ export class BianbuMcpSettingsComponent {
   lastMaintenanceAt = ''
   lastMaintenanceSummary = ''
   lastError = ''
+  advancedVisible = false
 
   constructor (
     public config: ConfigService,
@@ -48,13 +49,14 @@ export class BianbuMcpSettingsComponent {
 
   get sampleJson (): string {
     const s = this.settings
+    const domain = String(s.domain || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
     return JSON.stringify({
       mcpServers: {
         [s.name || 'bianbu']: {
           type: 'http',
-          url: s.url || 'https://your-domain.example.com/mcp',
+          url: domain ? `https://${domain}/mcp` : 'https://your-domain.example.com/mcp',
           headers: {
-            'X-API-KEY': s.apiKey || 'your-x-api-key',
+            'X-API-KEY': s.apiKey ? '••••••••' : 'your-x-api-key',
           },
         },
       },
