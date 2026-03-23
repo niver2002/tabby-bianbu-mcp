@@ -44,7 +44,7 @@ export class BianbuPtySession extends BaseSession {
     }
     this.inputQueue.push(data)
     if (!this.inputFlushTimer) {
-      this.inputFlushTimer = setTimeout(() => this.flushInput(), 16)
+      this.inputFlushTimer = setTimeout(() => this.flushInput(), 4)
     }
   }
 
@@ -98,7 +98,15 @@ export class BianbuPtySession extends BaseSession {
     const combined = Buffer.concat(this.inputQueue)
     this.inputQueue = []
     try {
-      await this.mcp.writePtyInput(this.sessionId, combined.toString('base64'))
+      const result = await this.mcp.writePtyInput(this.sessionId, combined.toString('base64'))
+      // Consume piggybacked output to avoid waiting for the next poll cycle
+      if (result?.output?.data_base64) {
+        this.emitOutput(Buffer.from(result.output.data_base64, 'base64'))
+      }
+      if (result?.output && !result.output.alive) {
+        this.alive = false
+        this.emitOutput(Buffer.from('\r\n\x1b[90m[Process exited]\x1b[0m\r\n'))
+      }
     } catch (err: any) {
       this.logger.error('PTY write error', err)
     }

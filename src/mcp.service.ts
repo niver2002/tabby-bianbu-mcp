@@ -355,14 +355,14 @@ export class BianbuMcpService {
     return 'interactive'
   }
 
-  private async executeRequest (payload: any, signal?: AbortSignal): Promise<any> {
+  private async executeRequest (payload: any, signal?: AbortSignal, noRetry = false): Promise<any> {
     const settings = this.settings
     const url = this.normalizedUrl
     if (!url) {
       throw new Error('MCP URL is required')
     }
 
-    const maxRetries = Math.max(0, Number(settings.maxRetries ?? 2))
+    const maxRetries = noRetry ? 0 : Math.max(0, Number(settings.maxRetries ?? 2))
     const retryBaseMs = Math.max(100, Number(settings.retryBaseMs ?? 1000))
     let lastBody = ''
     let lastStatus = 0
@@ -500,7 +500,7 @@ export class BianbuMcpService {
     return this.executePtyRequest('write_pty_input', {
       session_id: sessionId,
       data_base64: dataBase64,
-    })
+    }, undefined, true)
   }
 
   /**
@@ -533,13 +533,13 @@ export class BianbuMcpService {
    * operations. This is critical for input latency (write_pty_input)
    * and for long-poll reads that would otherwise block the lane.
    */
-  private async executePtyRequest (toolName: string, args: any, signal?: AbortSignal): Promise<any> {
+  private async executePtyRequest (toolName: string, args: any, signal?: AbortSignal, noRetry = false): Promise<any> {
     return this.executeRequest({
       jsonrpc: '2.0',
       id: `pty-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       method: 'tools/call',
       params: { name: toolName, arguments: args },
-    }, signal)
+    }, signal, noRetry)
   }
 
   async listDirectory (path: string, asRoot: boolean): Promise<any> {

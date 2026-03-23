@@ -2,6 +2,16 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.8.4] - 2026-03-23
+
+### Changed (Remote MCP Server v1.5.0)
+- **PTY echo piggyback**: `write_pty_input` now waits up to 5ms for echo data and returns it in the response, saving a full RTT/2 for keystroke echo display
+- script version bumped to 1.5.0, server version bumped to 1.5.0
+
+### Fixed
+- **PTY input batching reduced**: 16ms → 4ms, lowering first-keystroke latency
+- **PTY write retry exemption**: `write_pty_input` no longer retries on transient 429/5xx, preventing 1-3s stalls during server load spikes
+
 ## [0.8.3] - 2026-03-23
 
 ### Fixed

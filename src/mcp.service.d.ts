@@ -53,6 +53,12 @@ export declare class BianbuMcpService {
     readPtyOutputDirect(sessionId: string, signal?: AbortSignal): Promise<any>;
     resizePty(sessionId: string, cols: number, rows: number): Promise<any>;
     closePtySession(sessionId: string): Promise<any>;
+    /**
+     * All PTY calls bypass the RequestLane to avoid queuing behind other
+     * operations. This is critical for input latency (write_pty_input)
+     * and for long-poll reads that would otherwise block the lane.
+     */
+    private executePtyRequest;
     listDirectory(path: string, asRoot: boolean): Promise<any>;
     readTextFile(path: string, maxBytes: number, asRoot: boolean): Promise<any>;
     writeTextFile(path: string, content: string, asRoot: boolean): Promise<any>;

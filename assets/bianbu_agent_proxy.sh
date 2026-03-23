@@ -4,8 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="${SCRIPT_VERSION:-1.4.0}"
-SERVER_VERSION="${SERVER_VERSION:-1.4.0}"
+SCRIPT_VERSION="${SCRIPT_VERSION:-1.5.0}"
+SERVER_VERSION="${SERVER_VERSION:-1.5.0}"
 APP_NAME="bianbu-mcp-server"
 INSTALL_ROOT="/opt/${APP_NAME}"
 APP_FILE="${INSTALL_ROOT}/server.mjs"
@@ -1627,7 +1627,18 @@ function makeServer() {
       const msg = JSON.stringify({ type: 'input', data: data_base64 }) + '\n';
       session.child.stdin.write(msg);
       session.updatedAt = Date.now();
-      const payload = { ok: true, session_id };
+      // Wait briefly for echo data so the client can display it without
+      // an extra round-trip through read_pty_output.
+      if (session.outputBuffer.length === 0 && session.alive) {
+        await new Promise((resolve) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; clearTimeout(t); const i = session.waiters.indexOf(finish); if (i >= 0) session.waiters.splice(i, 1); resolve(); } };
+          session.waiters.push(finish);
+          const t = setTimeout(finish, 5);
+        });
+      }
+      const piggyback = drainPtyOutput(session);
+      const payload = { ok: true, session_id, output: piggyback };
       return textResult(JSON.stringify(payload, null, 2), payload);
     },
   );

@@ -10,6 +10,11 @@ export declare class BianbuPtySession extends BaseSession {
     private pollAbort;
     private inputQueue;
     private inputFlushTimer;
+    private initialCols;
+    private initialRows;
+    private lastCols;
+    private lastRows;
+    private resizeTimer;
     constructor(logger: Logger, mcp: BianbuMcpService);
     start(options?: {
         cwd?: string;
