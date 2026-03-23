@@ -791,78 +791,94 @@ else:
     stdin_fd = sys.stdin.fileno()
     old_stdin_flags = fcntl.fcntl(stdin_fd, fcntl.F_GETFL)
     fcntl.fcntl(stdin_fd, fcntl.F_SETFL, old_stdin_flags | os.O_NONBLOCK)
-    running = True
-    def on_sigchld(signum, frame):
-        nonlocal running
-        running = False
-    signal.signal(signal.SIGCHLD, on_sigchld)
+    # Ignore SIGCHLD to prevent select() interruption from .bashrc subprocesses etc.
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    child_exited = False
     stdin_buf = b''
-    while running:
+    while True:
+        fds_to_watch = [master_fd]
+        if not child_exited:
+            fds_to_watch.append(stdin_fd)
         try:
-            readable, _, _ = select.select([master_fd, stdin_fd], [], [], 0.05)
+            readable, _, _ = select.select(fds_to_watch, [], [], 0.5)
         except (select.error, InterruptedError, ValueError):
-            if not running:
-                break
-            continue
-        if master_fd in readable:
-            try:
-                data = os.read(master_fd, 65536)
-                if not data:
-                    break
-                send_msg({'type': 'output', 'data': base64.b64encode(data).decode('ascii')})
-            except OSError:
-                break
-        if stdin_fd in readable:
-            try:
-                chunk = os.read(stdin_fd, 65536)
-                if not chunk:
-                    break
-                stdin_buf += chunk
-                while b'\n' in stdin_buf:
-                    line, stdin_buf = stdin_buf.split(b'\n', 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        cmd = json.loads(line.decode('utf-8'))
-                        if cmd['type'] == 'input':
-                            raw = base64.b64decode(cmd['data'])
-                            os.write(master_fd, raw)
-                        elif cmd['type'] == 'resize':
-                            set_winsize(master_fd, cmd['rows'], cmd['cols'])
-                            try:
-                                os.kill(pid, signal.SIGWINCH)
-                            except OSError:
-                                pass
-                        elif cmd['type'] == 'close':
-                            running = False
-                            break
-                    except (json.JSONDecodeError, KeyError, OSError):
-                        pass
-            except OSError:
-                break
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        pass
-    exit_code = -1
-    try:
-        for _ in range(50):
-            rpid, status = os.waitpid(pid, os.WNOHANG)
-            if rpid != 0:
-                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
-                break
-            import time; time.sleep(0.1)
+            pass
         else:
+            if master_fd in readable:
+                try:
+                    data = os.read(master_fd, 65536)
+                    if data:
+                        send_msg({'type': 'output', 'data': base64.b64encode(data).decode('ascii')})
+                    else:
+                        break
+                except OSError:
+                    break
+            if stdin_fd in readable:
+                try:
+                    chunk = os.read(stdin_fd, 65536)
+                    if chunk:
+                        stdin_buf += chunk
+                        while b'\n' in stdin_buf:
+                            line, stdin_buf = stdin_buf.split(b'\n', 1)
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                cmd = json.loads(line.decode('utf-8'))
+                                if cmd['type'] == 'input':
+                                    raw = base64.b64decode(cmd['data'])
+                                    os.write(master_fd, raw)
+                                elif cmd['type'] == 'resize':
+                                    set_winsize(master_fd, cmd['rows'], cmd['cols'])
+                                    try:
+                                        os.kill(pid, signal.SIGWINCH)
+                                    except OSError:
+                                        pass
+                                elif cmd['type'] == 'close':
+                                    child_exited = True
+                                    break
+                            except (json.JSONDecodeError, KeyError, OSError):
+                                pass
+                except OSError:
+                    pass
+        # Check if child process has exited (non-blocking)
+        if not child_exited:
             try:
-                os.kill(pid, signal.SIGKILL)
-                os.waitpid(pid, 0)
+                rpid, status = os.waitpid(pid, os.WNOHANG)
+                if rpid != 0:
+                    child_exited = True
+            except ChildProcessError:
+                child_exited = True
+        # If child exited, drain remaining master_fd output then break
+        if child_exited:
+            import time
+            time.sleep(0.1)
+            try:
+                while True:
+                    leftover = os.read(master_fd, 65536)
+                    if not leftover:
+                        break
+                    send_msg({'type': 'output', 'data': base64.b64encode(leftover).decode('ascii')})
             except OSError:
                 pass
+            break
+    exit_code = -1
+    if not child_exited:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    try:
+        rpid, status = os.waitpid(pid, os.WNOHANG if child_exited else 0)
+        if rpid != 0:
+            exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
     except ChildProcessError:
         pass
     send_msg({'type': 'exit', 'code': exit_code})
-    os.close(master_fd)
+    try:
+        os.close(master_fd)
+    except OSError:
+        pass
 `;
 }
 
@@ -934,7 +950,20 @@ function createPtySession(id, cwd, asRoot, cols, rows) {
       } catch {}
     }
   });
-  child.stderr.on('data', () => {});
+  child.stderr.on('data', (chunk) => {
+    const msg = chunk.toString().trim();
+    if (msg) {
+      // Inject stderr as a synthetic output line so the client can see errors
+      const buf = Buffer.from(`\r\n\x1b[31m[pty-helper stderr] ${msg}\x1b[0m\r\n`);
+      session.outputBuffer.push(buf);
+      session.outputBufferSize += buf.length;
+      session.updatedAt = Date.now();
+      for (const waiter of session.waiters) {
+        waiter();
+      }
+      session.waiters = [];
+    }
+  });
   child.on('exit', () => {
     session.alive = false;
     session.updatedAt = Date.now();

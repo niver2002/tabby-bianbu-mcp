@@ -2,6 +2,14 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.8.2] - 2026-03-23
+
+### Fixed
+- **PTY helper SIGCHLD race condition**: replaced `SIGCHLD` signal handler with non-blocking `waitpid(WNOHANG)` poll — `.bashrc` subprocesses (e.g. `dircolors`, `lesspipe`) were triggering SIGCHLD, setting `running=False`, and killing the PTY before bash was ready
+- **PTY helper stdin EOF exit**: stdin EOF no longer terminates the helper; instead it stops watching stdin and lets master_fd drain until bash actually exits
+- **PTY stderr visibility**: Python helper stderr is now forwarded to the terminal output as red diagnostic text instead of being silently discarded
+- **select() timeout tuned**: changed from 50ms to 500ms to reduce CPU usage during idle PTY sessions
+
 ## [0.8.1] - 2026-03-23
 
 ### Fixed
