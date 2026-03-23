@@ -34,6 +34,7 @@ export interface RemoteHealthInfo {
         shellSession: boolean;
         rateLimiting: boolean;
         isoTimestamps: boolean;
+        ptySession: boolean;
     };
     tools: string[];
     transportMode: string | null;

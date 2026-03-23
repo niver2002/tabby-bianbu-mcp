@@ -2,6 +2,13 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.8.1] - 2026-03-23
+
+### Fixed
+- **PTY shell tab closing immediately**: removed `closed.next()` from poll loop on process exit — prevents Tabby from auto-closing the tab when the PTY process ends
+- **PTY startup fallback**: if `open_pty_session` fails (e.g. python3 unavailable), automatically falls back to `BianbuShellSession` instead of leaving a dead tab
+- **Server-side early crash detection**: `open_pty_session` now waits 200ms and checks if the PTY child is still alive before returning, giving a clear error instead of a silently dead session
+
 ## [0.8.0] - 2026-03-23
 
 ### Added (Remote MCP Server v1.4.0)

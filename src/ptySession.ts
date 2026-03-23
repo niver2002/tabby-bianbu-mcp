@@ -98,7 +98,6 @@ export class BianbuPtySession extends BaseSession {
         if (!result?.alive) {
           this.alive = false
           this.emitOutput(Buffer.from('\r\n\x1b[90m[Process exited]\x1b[0m\r\n'))
-          this.closed.next()
           break
         }
       } catch (err: any) {

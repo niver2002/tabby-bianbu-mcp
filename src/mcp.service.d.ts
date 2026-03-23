@@ -44,6 +44,15 @@ export declare class BianbuMcpService {
     openShellSession(cwd: string, asRoot: boolean): Promise<any>;
     execShellSession(sessionId: string, command: string, timeoutSeconds: number): Promise<any>;
     closeShellSession(sessionId: string): Promise<any>;
+    openPtySession(cwd: string, asRoot: boolean, cols: number, rows: number): Promise<any>;
+    writePtyInput(sessionId: string, dataBase64: string): Promise<any>;
+    /**
+     * Read PTY output via long-poll. Bypasses the RequestLane to avoid
+     * blocking the interactive lane for up to 5 seconds per poll cycle.
+     */
+    readPtyOutputDirect(sessionId: string, signal?: AbortSignal): Promise<any>;
+    resizePty(sessionId: string, cols: number, rows: number): Promise<any>;
+    closePtySession(sessionId: string): Promise<any>;
     listDirectory(path: string, asRoot: boolean): Promise<any>;
     readTextFile(path: string, maxBytes: number, asRoot: boolean): Promise<any>;
     writeTextFile(path: string, content: string, asRoot: boolean): Promise<any>;

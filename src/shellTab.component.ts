@@ -49,15 +49,23 @@ export class BianbuCloudShellTabComponent extends BaseTerminalTabComponent<any> 
     const health = await this.mcp.getHealth().catch(() => null)
 
     if (health?.supports?.ptySession) {
-      const pty = new BianbuPtySession(this.logger, this.mcp)
-      session = pty as BaseSession
-      this.setSession(session, true)
-      await pty.start({
-        cwd: this.cwd,
-        asRoot: this.asRoot,
-        cols: this.size?.columns || 80,
-        rows: this.size?.rows || 24,
-      })
+      try {
+        const pty = new BianbuPtySession(this.logger, this.mcp)
+        session = pty as BaseSession
+        this.setSession(session, true)
+        await pty.start({
+          cwd: this.cwd,
+          asRoot: this.asRoot,
+          cols: this.size?.columns || 80,
+          rows: this.size?.rows || 24,
+        })
+      } catch (err: any) {
+        this.logger.warn('PTY session failed, falling back to shell session', err)
+        const shell = new BianbuShellSession(this.logger, this.mcp)
+        session = shell as BaseSession
+        this.setSession(session, true)
+        await shell.start({ cwd: this.cwd, asRoot: this.asRoot })
+      }
     } else {
       const shell = new BianbuShellSession(this.logger, this.mcp)
       session = shell as BaseSession

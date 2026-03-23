@@ -1570,7 +1570,13 @@ function makeServer() {
       }
       await ensurePtyHelper();
       const session_id = newSessionId('pty');
-      createPtySession(session_id, workingDirectory, as_root, cols, rows);
+      const session = createPtySession(session_id, workingDirectory, as_root, cols, rows);
+      // Wait briefly to detect immediate crash
+      await new Promise(r => setTimeout(r, 200));
+      if (!session.alive) {
+        ptySessions.delete(session_id);
+        throw new Error('PTY session exited immediately — check that python3 is available and the working directory is accessible');
+      }
       const payload = { session_id, cwd: workingDirectory, as_root, cols, rows };
       return textResult(JSON.stringify(payload, null, 2), payload);
     },
