@@ -2,6 +2,11 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.9.1] - 2026-03-23
+
+### Fixed
+- **502 gateway errors no longer trigger early abort**: during repair/upgrade the old server restarts, causing expected 502/503/504 from the gateway (openresty). These are now excluded from the consecutive-failure counter, so the plugin waits the full timeout for the new server to come up instead of aborting after ~46 seconds.
+
 ## [0.9.0] - 2026-03-23
 
 ### Added

@@ -732,10 +732,14 @@ export class BianbuMcpService {
         )
       } catch (error: any) {
         lastError = error
-        consecutiveErrors++
-        this.logSession(options.session, 'warn', 'Remote health poll failed', String(error?.message || error))
+        const msg = String(error?.message || error)
+        const isGatewayError = /\bstatus\s+(502|503|504)\b/.test(msg)
+        if (!isGatewayError) {
+          consecutiveErrors++
+        }
+        this.logSession(options.session, 'warn', `Remote health poll failed${isGatewayError ? ' (gateway, expected during restart)' : ''}`, msg)
         if (consecutiveErrors >= 10) {
-          throw new Error(`Remote health check failed ${consecutiveErrors} consecutive times. Last error: ${String(error?.message || error)}`)
+          throw new Error(`Remote health check failed ${consecutiveErrors} consecutive times (excluding gateway errors). Last error: ${msg}`)
         }
         await this.sleep(intervalMs)
         continue
