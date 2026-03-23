@@ -107,10 +107,15 @@ export function buildDetachedInstallerCommand (
     '__bianbu_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"',
     `printf '{"ok":%s,"exit_code":%s,"finished_at":"%s","action":"%s","log_path":"%s","session_name":"%s"}\\n' "$__bianbu_ok" "$__bianbu_rc" "$__bianbu_ts" ${shellQuote(action)} ${shellQuote(logPath)} ${shellQuote(sessionName)} > ${shellQuote(statusPath)}`,
   ].join('; ')
+  // Use systemd-run to launch the installer in an independent scope.
+  // nohup & inherits the parent cgroup, so when the installer runs
+  // "systemctl stop bianbu-mcp-server", systemd kills everything in
+  // the service cgroup — including the installer itself.
+  // systemd-run --scope creates a separate transient unit.
   return [
     `mkdir -p ${shellQuote(targetDir)}`,
     `chmod 700 ${shellQuote(remotePath)}`,
-    `nohup bash -lc ${shellQuote(detachedCommand)} > /dev/null 2>&1 < /dev/null & printf '__BIANBU_UPGRADE_STARTED__%s\\n' \"$!\"`,
+    `systemd-run --scope --quiet bash -lc ${shellQuote(detachedCommand)} > /dev/null 2>&1 < /dev/null & printf '__BIANBU_UPGRADE_STARTED__%s\\n' "$!"`,
   ].join(' && ')
 }
 

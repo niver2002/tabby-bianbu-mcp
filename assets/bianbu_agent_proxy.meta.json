@@ -1,9 +1,9 @@
 {
   "fileName": "bianbu_agent_proxy.sh",
   "sourceFile": "bianbu_agent_proxy.sh",
-  "scriptVersion": "1.5.0",
-  "serverVersion": "1.5.0",
-  "sha256": "6b70a7f973a8f4204ab012ff2b88875cebcf1e3912604c996f354ba64b323890",
-  "bytes": 87798,
-  "generatedAt": "2026-03-23T12:09:54.661Z"
+  "scriptVersion": "1.6.0",
+  "serverVersion": "1.6.0",
+  "sha256": "65673d3e5da213ff0e4a9325d7bfaedd372a7494321942a8ba77778c0e438462",
+  "bytes": 87797,
+  "generatedAt": "2026-03-23T12:43:27.856Z"
 }

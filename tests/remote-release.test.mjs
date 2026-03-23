@@ -37,7 +37,7 @@ test('buildDetachedInstallerCommand launches installer in background', () => {
     '/tmp/bianbu_agent_proxy.sh.status.json',
     'maintenance-up-20260320T112233Z',
   )
-  assert.match(command, /nohup bash -lc/)
+  assert.match(command, /systemd-run --scope --quiet bash -lc/)
   assert.match(command, /bash .*\/tmp\/bianbu_agent_proxy\.sh.* up >/)
   assert.match(command, /__BIANBU_UPGRADE_STARTED__/)
   assert.match(command, /status\.json/)

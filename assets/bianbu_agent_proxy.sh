@@ -4,8 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="${SCRIPT_VERSION:-1.5.0}"
-SERVER_VERSION="${SERVER_VERSION:-1.5.0}"
+SCRIPT_VERSION="${SCRIPT_VERSION:-1.6.0}"
+SERVER_VERSION="${SERVER_VERSION:-1.6.0}"
 APP_NAME="bianbu-mcp-server"
 INSTALL_ROOT="/opt/${APP_NAME}"
 APP_FILE="${INSTALL_ROOT}/server.mjs"
@@ -2256,7 +2256,7 @@ Group=${RUN_GROUP}
 ExecStart=/usr/bin/env node ${APP_FILE}
 Restart=always
 RestartSec=5
-PrivateTmp=yes
+PrivateTmp=no
 
 [Install]
 WantedBy=multi-user.target

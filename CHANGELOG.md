@@ -2,6 +2,12 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.9.3] - 2026-03-23 (script v1.6.0)
+
+### Fixed
+- **Upgrade script self-kill**: the installer was launched via `nohup &`, which inherits the MCP server's systemd cgroup. When the installer ran `systemctl stop bianbu-mcp-server`, systemd killed the entire cgroup — including the installer itself. Now uses `systemd-run --scope` to run the installer in an independent transient unit.
+- **PrivateTmp hiding log files**: the systemd service had `PrivateTmp=yes`, giving the MCP server a private `/tmp` namespace. When the service stopped, the private mount was torn down and log/status files written to `/tmp` disappeared. Changed to `PrivateTmp=no` so files in `/tmp` are visible to other processes and persist after service restart.
+
 ## [0.9.2] - 2026-03-23
 
 ### Removed
