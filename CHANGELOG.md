@@ -2,6 +2,11 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.6.1] - 2026-03-23
+
+### Fixed
+- Angular JIT compilation error: moved arrow-function-based transfer status expression from pug template into `activeTransferLabel` getter to avoid `Bindings cannot contain assignments` parser error
+
 ## [0.6.0] - 2026-03-23
 
 ### Added

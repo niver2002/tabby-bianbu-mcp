@@ -872,6 +872,14 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     return this.selectedIndices.has(index)
   }
 
+  get activeTransferLabel (): string {
+    let count = 0
+    for (const t of this.transfers) {
+      if (t.status === 'running' || t.status === 'queued') count++
+    }
+    return count ? '\u2B06\u2B07 ' + count + ' active' : '\u2713 Transfers done'
+  }
+
   toggleDetailPane (): void {
     this.detailPaneVisible = !this.detailPaneVisible
   }

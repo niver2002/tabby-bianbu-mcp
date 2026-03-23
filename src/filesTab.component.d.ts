@@ -109,6 +109,7 @@ export declare class BianbuCloudFilesTabComponent extends BaseTabComponent {
     get totalSize(): string;
     get selectionSummary(): string;
     isSelected(index: number): boolean;
+    get activeTransferLabel(): string;
     toggleDetailPane(): void;
     private clearPreview;
     baseName(path: string): string;

@@ -80,7 +80,7 @@ div(style='height:100%;display:flex;flex-direction:column;background:rgba(30,30,
   //- Status bar
   .status-bar(style='display:flex;align-items:center;gap:12px;padding:4px 12px;background:rgba(255,255,255,.03);border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;font-size:11px;opacity:.6;min-height:24px')
     span {{ status }}
-    span(*ngIf='transfers.length', (click)='transfersVisible = !transfersVisible', style='margin-left:auto;cursor:pointer;opacity:.8') {{ transfers.filter(t => t.status === 'running' || t.status === 'queued').length ? '⬆⬇ ' + transfers.filter(t => t.status === 'running' || t.status === 'queued').length + ' active' : '✓ Transfers done' }}
+    span(*ngIf='transfers.length', (click)='transfersVisible = !transfersVisible', style='margin-left:auto;cursor:pointer;opacity:.8') {{ activeTransferLabel }}
 
   //- Context menu
   div(*ngIf='contextMenuVisible', style='position:fixed;z-index:100;background:rgba(45,45,45,.98);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px;min-width:160px;backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.4)', [style.left.px]='contextMenuX', [style.top.px]='contextMenuY')
