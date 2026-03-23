@@ -1,6 +1,19 @@
 import { Component, Injector, HostListener } from '@angular/core'
-import { BaseTabComponent, NotificationsService } from 'tabby-core'
+import { BaseTabComponent, NotificationsService, PlatformService } from 'tabby-core'
 import { BianbuMcpService } from './mcp.service'
+
+interface TransferItem {
+  id: number
+  name: string
+  direction: 'upload' | 'download'
+  status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
+  bytesDone: number
+  bytesTotal: number | null
+  startedAt: number
+  finishedAt?: number
+  error?: string
+  controller?: AbortController
+}
 
 /** @hidden */
 @Component({
@@ -15,21 +28,37 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
   filteredItems: any[] = []
   selectedPath = ''
   selectedContent = ''
-  newDirectoryName = ''
-  newFileName = ''
+  selectedIsText = false
   status = 'Ready'
   dragActive = false
   searchText = ''
   history: string[] = ['.']
   historyIndex = 0
   selectedIndex = -1
-  renameTarget = ''
-  renameValue = ''
+
+  contextMenuVisible = false
+  contextMenuX = 0
+  contextMenuY = 0
+  contextItem: any = null
+
+  promptVisible = false
+  promptTitle = ''
+  promptPlaceholder = ''
+  promptValue = ''
+  promptAction: null | 'mkdir' | 'newfile' | 'rename' = null
+  promptTarget: any = null
+
+  transfersVisible = true
+  transfers: TransferItem[] = []
+  private transferSeq = 1
+  private transferQueue: Array<() => Promise<void>> = []
+  private transferQueueRunning = false
 
   constructor (
     injector: Injector,
     private mcp: BianbuMcpService,
     private notifications: NotificationsService,
+    private platform: PlatformService,
   ) {
     super(injector)
     this.setTitle('Bianbu Cloud Files')
@@ -56,11 +85,16 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     return this.filteredItems[this.selectedIndex] ?? null
   }
 
+  @HostListener('document:click')
+  onDocumentClick (): void {
+    this.hideContextMenu()
+  }
+
   @HostListener('document:keydown', ['$event'])
   onKeyDown (event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null
     const tag = target?.tagName?.toLowerCase()
-    const editing = ['input', 'textarea'].includes(tag || '')
+    const editing = ['input', 'textarea'].includes(tag || '') || this.promptVisible
 
     if (event.key === 'F5') {
       event.preventDefault()
@@ -89,6 +123,16 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
       el?.select()
       return
     }
+    if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'n') {
+      event.preventDefault()
+      this.openCreateDirectoryPrompt()
+      return
+    }
+    if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'n') {
+      event.preventDefault()
+      this.openCreateFilePrompt()
+      return
+    }
     if (editing) {
       return
     }
@@ -104,7 +148,7 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
     if (event.key === 'F2' && this.selectedItem) {
       event.preventDefault()
-      this.startRename(this.selectedItem)
+      this.openRenamePrompt(this.selectedItem)
       return
     }
     if (event.key === 'Enter' && this.selectedItem) {
@@ -128,7 +172,7 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     this.busy = true
     this.status = 'Loading directory…'
     this.pathInput = this.currentPath
-    this.setProgress(0.3)
+    this.setProgress(0.25)
     try {
       const result = await this.mcp.listDirectory(this.currentPath || '.', this.asRoot)
       this.items = result.items || []
@@ -148,13 +192,16 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
 
   applyFilter (): void {
     const q = this.searchText.trim().toLowerCase()
-    this.filteredItems = this.items.filter(item => !q || item.path.toLowerCase().includes(q))
+    this.filteredItems = this.items.filter(item => {
+      const name = this.baseName(item.path).toLowerCase()
+      return !q || name.includes(q) || item.path.toLowerCase().includes(q)
+    })
     if (this.selectedIndex >= this.filteredItems.length) {
       this.selectedIndex = this.filteredItems.length - 1
     }
   }
 
-  async navigateToInput (): Promise<void> {
+  navigateToInput (): void {
     this.navigate(this.pathInput || '.')
   }
 
@@ -166,8 +213,7 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
       this.history.push(this.currentPath)
       this.historyIndex = this.history.length - 1
     }
-    this.selectedPath = ''
-    this.selectedContent = ''
+    this.clearPreview()
     this.selectedIndex = -1
     void this.refresh()
   }
@@ -238,22 +284,29 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
 
     this.busy = true
-    this.status = `Reading ${item.path}`
+    this.status = `Opening ${item.path}`
+    this.selectedPath = item.path
+    this.selectedIsText = this.isTextLike(item.path)
     try {
-      const result = await this.mcp.readTextFile(item.path, 512 * 1024, this.asRoot)
-      this.selectedPath = item.path
-      this.selectedContent = result.content || ''
-      this.status = `Opened ${item.path}`
+      if (this.selectedIsText) {
+        const result = await this.mcp.readTextFile(item.path, 512 * 1024, this.asRoot)
+        this.selectedContent = result.content || ''
+        this.status = `Opened ${item.path}`
+      } else {
+        this.selectedContent = ''
+        this.status = `Binary / non-text file selected: ${item.path}`
+      }
     } catch (error: any) {
       this.notifications.error('Failed to open file', String(error?.message || error))
       this.status = String(error?.message || error)
+      this.selectedContent = ''
     } finally {
       this.busy = false
     }
   }
 
   async saveSelected (): Promise<void> {
-    if (!this.selectedPath) {
+    if (!this.selectedPath || !this.selectedIsText) {
       return
     }
     this.busy = true
@@ -271,15 +324,68 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
   }
 
-  async createDirectory (): Promise<void> {
-    if (!this.newDirectoryName.trim()) {
+  openCreateDirectoryPrompt (): void {
+    this.promptVisible = true
+    this.promptTitle = 'Create new folder'
+    this.promptPlaceholder = 'Folder name'
+    this.promptValue = ''
+    this.promptAction = 'mkdir'
+    this.promptTarget = null
+  }
+
+  openCreateFilePrompt (): void {
+    this.promptVisible = true
+    this.promptTitle = 'Create new file'
+    this.promptPlaceholder = 'File name'
+    this.promptValue = ''
+    this.promptAction = 'newfile'
+    this.promptTarget = null
+  }
+
+  openRenamePrompt (item: any): void {
+    this.promptVisible = true
+    this.promptTitle = 'Rename'
+    this.promptPlaceholder = 'New name'
+    this.promptValue = this.baseName(item.path)
+    this.promptAction = 'rename'
+    this.promptTarget = item
+  }
+
+  closePrompt (): void {
+    this.promptVisible = false
+    this.promptAction = null
+    this.promptTarget = null
+    this.promptValue = ''
+  }
+
+  async confirmPrompt (): Promise<void> {
+    const value = this.promptValue.trim()
+    if (!value || !this.promptAction) {
+      this.closePrompt()
       return
     }
-    const path = this.joinPath(this.currentPath, this.newDirectoryName.trim())
+
+    if (this.promptAction === 'mkdir') {
+      await this.createDirectory(value)
+      this.closePrompt()
+      return
+    }
+    if (this.promptAction === 'newfile') {
+      await this.createFile(value)
+      this.closePrompt()
+      return
+    }
+    if (this.promptAction === 'rename' && this.promptTarget) {
+      await this.renameItem(this.promptTarget, value)
+      this.closePrompt()
+    }
+  }
+
+  async createDirectory (name: string): Promise<void> {
+    const path = this.joinPath(this.currentPath, name)
     this.busy = true
     try {
       await this.mcp.makeDirectory(path, this.asRoot)
-      this.newDirectoryName = ''
       await this.refresh()
       this.notifications.notice('Directory created')
     } catch (error: any) {
@@ -290,15 +396,11 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
   }
 
-  async createFile (): Promise<void> {
-    if (!this.newFileName.trim()) {
-      return
-    }
-    const path = this.joinPath(this.currentPath, this.newFileName.trim())
+  async createFile (name: string): Promise<void> {
+    const path = this.joinPath(this.currentPath, name)
     this.busy = true
     try {
       await this.mcp.writeTextFile(path, '', this.asRoot)
-      this.newFileName = ''
       await this.refresh()
       this.notifications.notice('File created')
     } catch (error: any) {
@@ -309,37 +411,20 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
   }
 
-  startRename (item: any): void {
-    this.renameTarget = item.path
-    this.renameValue = item.path.split('/').pop() || item.path
-  }
-
-  cancelRename (): void {
-    this.renameTarget = ''
-    this.renameValue = ''
-  }
-
-  async commitRename (item: any): Promise<void> {
-    if (!this.renameTarget || !this.renameValue.trim()) {
-      this.cancelRename()
-      return
-    }
+  async renameItem (item: any, name: string): Promise<void> {
     const parent = item.path.split('/').slice(0, -1).join('/') || '.'
-    const newPath = this.joinPath(parent, this.renameValue.trim())
+    const newPath = this.joinPath(parent, name)
     try {
-      if (item.is_dir) {
-        await this.mcp.makeDirectory(newPath, this.asRoot)
-      } else {
-        const content = await this.mcp.readTextFile(item.path, 512 * 1024, this.asRoot)
-        await this.mcp.writeTextFile(newPath, content.content || '', this.asRoot)
-      }
-      await this.mcp.deletePath(item.path, !!item.is_dir, this.asRoot)
+      await this.mcp.renamePath(item.path, newPath, this.asRoot)
       this.notifications.notice('Path renamed')
-      this.cancelRename()
+      if (this.selectedPath === item.path) {
+        this.selectedPath = newPath
+      }
       await this.refresh()
     } catch (error: any) {
-      this.notifications.error('Rename failed', String(error?.message || error))
-      this.status = String(error?.message || error)
+      const message = String(error?.message || error)
+      this.notifications.error('Rename failed', message)
+      this.status = message
     }
   }
 
@@ -348,8 +433,7 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     try {
       await this.mcp.deletePath(item.path, !!item.is_dir, this.asRoot)
       if (this.selectedPath === item.path) {
-        this.selectedPath = ''
-        this.selectedContent = ''
+        this.clearPreview()
       }
       await this.refresh()
       this.notifications.notice('Path deleted')
@@ -361,30 +445,72 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     }
   }
 
+  showContextMenu (event: MouseEvent, item: any): void {
+    event.preventDefault()
+    event.stopPropagation()
+    this.selectItem(item)
+    this.contextItem = item
+    this.contextMenuVisible = true
+    this.contextMenuX = event.clientX
+    this.contextMenuY = event.clientY
+  }
+
+  hideContextMenu (): void {
+    this.contextMenuVisible = false
+    this.contextItem = null
+  }
+
   async uploadFile (event: Event): Promise<void> {
     const input = event.target as HTMLInputElement
-    const file = input.files?.[0]
-    if (!file) {
+    const files = Array.from(input.files || [])
+    if (!files.length) {
       return
     }
-    await this.uploadDroppedFile(file)
+    for (const file of files) {
+      this.enqueueUpload(file)
+    }
     input.value = ''
   }
 
-  async uploadDroppedFile (file: File): Promise<void> {
-    this.busy = true
-    try {
-      const base64 = await this.readFileAsBase64(file)
-      const path = this.joinPath(this.currentPath, file.name)
-      await this.mcp.uploadBinaryFile(path, base64, this.asRoot)
-      this.notifications.notice('File uploaded')
-      await this.refresh()
-    } catch (error: any) {
-      this.notifications.error('Upload failed', String(error?.message || error))
-      this.status = String(error?.message || error)
-    } finally {
-      this.busy = false
+  private createTransfer (name: string, direction: 'upload' | 'download', total: number | null, controller: AbortController, status: TransferItem['status'] = 'queued'): TransferItem {
+    const transfer: TransferItem = {
+      id: this.transferSeq++,
+      name,
+      direction,
+      status,
+      bytesDone: 0,
+      bytesTotal: total,
+      startedAt: Date.now(),
+      controller,
     }
+    return transfer
+  }
+
+  cancelTransfer (transfer: TransferItem): void {
+    if (transfer.status !== 'running' && transfer.status !== 'queued') {
+      return
+    }
+    transfer.controller?.abort()
+    transfer.status = 'cancelled'
+    transfer.finishedAt = Date.now()
+  }
+
+  transferPercent (transfer: TransferItem): number | null {
+    if (!transfer.bytesTotal) {
+      return null
+    }
+    return Math.max(0, Math.min(100, Math.round((transfer.bytesDone / transfer.bytesTotal) * 100)))
+  }
+
+  transferRate (transfer: TransferItem): string {
+    const end = transfer.finishedAt || Date.now()
+    const seconds = Math.max(1, (end - transfer.startedAt) / 1000)
+    const bytes = transfer.bytesDone || 0
+    return `${Math.round(bytes / seconds / 1024)} KB/s`
+  }
+
+  async uploadDroppedFile (file: File): Promise<void> {
+    this.enqueueUpload(file)
   }
 
   onDragOver (event: DragEvent): void {
@@ -399,28 +525,231 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
   async onDrop (event: DragEvent): Promise<void> {
     event.preventDefault()
     this.dragActive = false
-    const file = event.dataTransfer?.files?.[0]
-    if (!file) {
+    const files = Array.from(event.dataTransfer?.files || [])
+    if (!files.length) {
       return
     }
-    await this.uploadDroppedFile(file)
+    for (const file of files) {
+      this.enqueueUpload(file)
+    }
   }
 
   async downloadSelected (): Promise<void> {
     if (!this.selectedPath) {
       return
     }
-    try {
-      const result = await this.mcp.downloadBinaryFile(this.selectedPath, this.asRoot)
-      const a = document.createElement('a')
-      a.href = `data:application/octet-stream;base64,${result.content_base64}`
-      a.download = this.selectedPath.split('/').pop() || 'download.bin'
-      a.click()
-      this.notifications.notice('Download started')
-    } catch (error: any) {
-      this.notifications.error('Download failed', String(error?.message || error))
-      this.status = String(error?.message || error)
+    this.enqueueDownload(this.selectedPath)
+  }
+
+  private enqueueUpload (file: File): void {
+    const controller = new AbortController()
+    const transfer = this.createTransfer(file.name, 'upload', file.size, controller, 'queued')
+    this.queueTransferJob(transfer, () => this.runUploadTransfer(file, transfer))
+  }
+
+  private enqueueDownload (remotePath: string): void {
+    const controller = new AbortController()
+    const transfer = this.createTransfer(this.baseName(remotePath), 'download', null, controller, 'queued')
+    this.queueTransferJob(transfer, () => this.runDownloadTransfer(remotePath, transfer))
+  }
+
+  private queueTransferJob (transfer: TransferItem, run: () => Promise<void>): void {
+    this.transfers.unshift(transfer)
+    this.transferQueue.push(async () => {
+      if (transfer.status === 'cancelled') {
+        return
+      }
+      transfer.status = 'running'
+      transfer.startedAt = Date.now()
+      await run()
+    })
+    void this.pumpTransferQueue()
+  }
+
+  private async pumpTransferQueue (): Promise<void> {
+    if (this.transferQueueRunning) {
+      return
     }
+    this.transferQueueRunning = true
+    try {
+      while (this.transferQueue.length) {
+        const job = this.transferQueue.shift()
+        if (!job) {
+          continue
+        }
+        await job()
+      }
+    } finally {
+      this.transferQueueRunning = false
+    }
+  }
+
+  private async runUploadTransfer (file: File, transfer: TransferItem): Promise<void> {
+    let session: any = null
+    try {
+      const remotePath = this.joinPath(this.currentPath, file.name)
+      const chunkBytes = Math.max(16 * 1024, Number(this.mcp.settings.uploadChunkBytes ?? 32 * 1024))
+      const workerCount = Math.max(1, Math.min(Number(this.mcp.settings.transferConcurrency ?? 30), Math.ceil(file.size / chunkBytes) || 1))
+      session = await this.mcp.uploadChunkedBegin(remotePath, this.asRoot, file.size, chunkBytes)
+      const offsets: number[] = []
+      for (let offset = 0; offset < file.size; offset += chunkBytes) {
+        offsets.push(offset)
+      }
+
+      let firstError: any = null
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (!transfer.controller?.signal.aborted) {
+          const offset = offsets.shift()
+          if (offset === undefined) {
+            return
+          }
+          if (firstError) {
+            return
+          }
+          try {
+            const slice = new Uint8Array(await file.slice(offset, Math.min(file.size, offset + chunkBytes)).arrayBuffer())
+            await this.mcp.uploadChunkedPart(session.upload_id, this.uint8ToBase64(slice), offset, transfer.controller?.signal)
+            transfer.bytesDone += slice.length
+          } catch (error: any) {
+            firstError = firstError || error
+            return
+          }
+        }
+      })
+
+      await Promise.all(workers)
+      if (transfer.controller?.signal.aborted) {
+        await this.mcp.uploadChunkedAbort(session.upload_id).catch(() => null)
+        transfer.status = 'cancelled'
+        transfer.finishedAt = Date.now()
+        return
+      }
+      if (firstError) {
+        throw firstError
+      }
+      await this.mcp.uploadChunkedFinish(session.upload_id)
+      transfer.bytesDone = file.size
+      transfer.status = 'done'
+      transfer.finishedAt = Date.now()
+      this.notifications.notice(`Uploaded ${file.name}`)
+      await this.refresh()
+    } catch (error: any) {
+      if (session?.upload_id) {
+        await this.mcp.uploadChunkedAbort(session.upload_id).catch(() => null)
+      }
+      if (transfer.status !== 'cancelled') {
+        transfer.status = 'error'
+        transfer.error = String(error?.message || error)
+        transfer.finishedAt = Date.now()
+        this.notifications.error('Upload failed', transfer.error)
+        this.status = transfer.error
+      }
+    }
+  }
+
+  private async runDownloadTransfer (remotePath: string, transfer: TransferItem): Promise<void> {
+    let session: any = null
+    let sink: any = null
+    try {
+      const chunkBytes = Math.max(16 * 1024, Number(this.mcp.settings.downloadChunkBytes ?? 128 * 1024))
+      session = await this.mcp.downloadChunkedBegin(remotePath, this.asRoot, chunkBytes)
+      transfer.bytesTotal = session.total_size
+      sink = await this.platform.startDownload(this.baseName(remotePath) || 'download.bin', 0o644, session.total_size || 0)
+      if (!sink) {
+        transfer.status = 'cancelled'
+        transfer.finishedAt = Date.now()
+        await this.mcp.downloadChunkedClose(session.download_id).catch(() => null)
+        return
+      }
+
+      const offsets: number[] = []
+      for (let offset = 0; offset < Number(session.total_size || 0); offset += chunkBytes) {
+        offsets.push(offset)
+      }
+      const workerCount = Math.max(1, Math.min(Number(this.mcp.settings.transferConcurrency ?? 30), offsets.length || 1))
+      const pending = new Map<number, Uint8Array>()
+      let nextWriteOffset = 0
+      let flushChain = Promise.resolve()
+      let firstError: any = null
+
+      const flushPending = async (): Promise<void> => {
+        while (pending.has(nextWriteOffset)) {
+          const bytes = pending.get(nextWriteOffset) as Uint8Array
+          pending.delete(nextWriteOffset)
+          await sink.write(bytes)
+          nextWriteOffset += bytes.length
+        }
+      }
+
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (!transfer.controller?.signal.aborted) {
+          const offset = offsets.shift()
+          if (offset === undefined) {
+            return
+          }
+          if (firstError) {
+            return
+          }
+          try {
+            const part = await this.mcp.downloadChunkedPart(session.download_id, offset, chunkBytes, transfer.controller?.signal)
+            const bytes = this.base64ToUint8(part.content_base64)
+            pending.set(offset, bytes)
+            transfer.bytesDone += bytes.length
+            flushChain = flushChain.then(() => flushPending())
+            await flushChain
+          } catch (error: any) {
+            firstError = firstError || error
+            return
+          }
+        }
+      })
+
+      await Promise.all(workers)
+      await flushChain
+      if (transfer.controller?.signal.aborted) {
+        await this.mcp.downloadChunkedClose(session.download_id).catch(() => null)
+        sink.close()
+        transfer.status = 'cancelled'
+        transfer.finishedAt = Date.now()
+        return
+      }
+      if (firstError) {
+        throw firstError
+      }
+      await this.mcp.downloadChunkedClose(session.download_id)
+      sink.close()
+      transfer.status = 'done'
+      transfer.finishedAt = Date.now()
+      this.notifications.notice(`Downloaded ${this.baseName(remotePath)}`)
+    } catch (error: any) {
+      sink?.close?.()
+      if (session?.download_id) {
+        await this.mcp.downloadChunkedClose(session.download_id).catch(() => null)
+      }
+      if (transfer.status !== 'cancelled') {
+        transfer.status = 'error'
+        transfer.error = String(error?.message || error)
+        transfer.finishedAt = Date.now()
+        this.notifications.error('Download failed', transfer.error)
+        this.status = transfer.error
+      }
+    }
+  }
+
+  private clearPreview (): void {
+    this.selectedPath = ''
+    this.selectedContent = ''
+    this.selectedIsText = false
+  }
+
+  baseName (path: string): string {
+    return path.split('/').pop() || path
+  }
+
+  private isTextLike (path: string): boolean {
+    const name = path.toLowerCase()
+    const exts = ['.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.ini', '.cfg', '.conf', '.log', '.sh', '.py', '.js', '.ts', '.tsx', '.jsx', '.html', '.css', '.scss', '.c', '.cpp', '.h', '.hpp', '.java', '.go', '.rs', '.sql']
+    return exts.some(ext => name.endsWith(ext))
   }
 
   private joinPath (base: string, child: string): string {
@@ -433,15 +762,22 @@ export class BianbuCloudFilesTabComponent extends BaseTabComponent {
     return `${base}/${child}`
   }
 
-  private readFileAsBase64 (file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const text = String(reader.result || '')
-        resolve(text.split(',')[1] || '')
-      }
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(file)
-    })
+  private uint8ToBase64 (bytes: Uint8Array): string {
+    let binary = ''
+    const chunk = 0x8000
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+    }
+    return btoa(binary)
   }
+
+  private base64ToUint8 (base64: string): Uint8Array {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return bytes
+  }
+
 }

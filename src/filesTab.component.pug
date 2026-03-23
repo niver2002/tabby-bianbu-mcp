@@ -1,63 +1,91 @@
-div(style='height:100%; display:flex; flex-direction:column; background:var(--backgroundColor, #111)')
-  .topbar(style='padding:12px 14px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:10px; background:rgba(255,255,255,0.02)')
+div(style='height:100%; display:flex; flex-direction:column; background:#111827; color:#e5e7eb')
+  .topbar(style='padding:12px 14px; border-bottom:1px solid #334155; display:flex; flex-direction:column; gap:10px; background:#0f172a')
     .toolbar(style='display:flex; gap:8px; align-items:center; flex-wrap:wrap')
-      button.btn.btn-sm.btn-secondary(type='button', (click)='goBack()', [disabled]='busy || historyIndex <= 0', title='Back (Alt+Left)') ←
-      button.btn.btn-sm.btn-secondary(type='button', (click)='goForward()', [disabled]='busy || historyIndex >= history.length - 1', title='Forward (Alt+Right)') →
-      button.btn.btn-sm.btn-secondary(type='button', (click)='goUp()', [disabled]='busy || currentPath === "." || currentPath === "/"', title='Up (Alt+Up / Backspace)') ↑
-      button.btn.btn-sm.btn-secondary(type='button', (click)='refresh()', [disabled]='busy', title='Refresh (F5)') ⟳
-      label.btn.btn-sm.btn-secondary(style='margin:0', title='Upload file') ⤴
-        input(type='file', style='display:none', (change)='uploadFile($event)', [disabled]='busy')
-      button.btn.btn-sm.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath', title='Download selected') ⤵
-      button.btn.btn-sm.btn-secondary(type='button', (click)='createDirectory()', [disabled]='busy || !newDirectoryName.trim()', title='Create directory') New folder
-      button.btn.btn-sm.btn-secondary(type='button', (click)='createFile()', [disabled]='busy || !newFileName.trim()', title='Create file') New file
-      input.form-control(type='text', style='width:180px', [(ngModel)]='newDirectoryName', placeholder='folder name')
-      input.form-control(type='text', style='width:180px', [(ngModel)]='newFileName', placeholder='file name')
-      label(style='display:flex; align-items:center; gap:6px; margin-left:auto')
+      button.btn.btn-sm.btn-secondary(type='button', (click)='goBack()', [disabled]='busy || historyIndex <= 0', title='Back (Alt+Left)', style='min-width:34px; font-weight:700') ←
+      button.btn.btn-sm.btn-secondary(type='button', (click)='goForward()', [disabled]='busy || historyIndex >= history.length - 1', title='Forward (Alt+Right)', style='min-width:34px; font-weight:700') →
+      button.btn.btn-sm.btn-secondary(type='button', (click)='goUp()', [disabled]='busy || currentPath === "." || currentPath === "/"', title='Up (Alt+Up / Backspace)', style='min-width:34px; font-weight:700') ↑
+      button.btn.btn-sm.btn-secondary(type='button', (click)='refresh()', [disabled]='busy', title='Refresh (F5)', style='min-width:34px; font-weight:700') ⟳
+      button.btn.btn-sm.btn-secondary(type='button', (click)='openCreateDirectoryPrompt()', [disabled]='busy') New folder
+      button.btn.btn-sm.btn-secondary(type='button', (click)='openCreateFilePrompt()', [disabled]='busy') New file
+      label.btn.btn-sm.btn-secondary(style='margin:0') Upload
+        input(type='file', multiple='multiple', style='display:none', (change)='uploadFile($event)', [disabled]='busy')
+      button.btn.btn-sm.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath') Download
+      button.btn.btn-sm.btn-secondary(type='button', (click)='transfersVisible = !transfersVisible') Transfers
+      label(style='display:flex; align-items:center; gap:6px; margin-left:auto; background:#1e293b; padding:6px 10px; border-radius:8px')
         input(type='checkbox', [(ngModel)]='asRoot', (ngModelChange)='refresh()')
         span as_root
     .address(style='display:flex; gap:8px; align-items:center')
-      div(style='display:flex; gap:4px; align-items:center; flex-wrap:wrap; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04); flex:1')
-        button.btn.btn-link(type='button', *ngFor='let crumb of breadcrumbs; let i=index', (click)='navigateBreadcrumb(i)', style='padding:0 4px; min-height:auto') {{ crumb }}
-      input#bianbu-path-input.form-control(type='text', style='max-width:420px', [(ngModel)]='pathInput', (keyup.enter)='navigateToInput()', title='Ctrl+L to focus path')
+      div(style='display:flex; gap:4px; align-items:center; flex-wrap:wrap; padding:10px 12px; border-radius:10px; background:#1e293b; border:1px solid #334155; flex:1')
+        button.btn.btn-link(type='button', *ngFor='let crumb of breadcrumbs; let i=index', (click)='navigateBreadcrumb(i)', style='padding:0 4px; min-height:auto; color:#f8fafc; text-decoration:none; font-weight:600') {{ crumb }}
+      input#bianbu-path-input.form-control(type='text', style='max-width:420px; background:#0b1220; color:#f8fafc; border:1px solid #334155', [(ngModel)]='pathInput', (keyup.enter)='navigateToInput()', title='Ctrl+L to focus path')
     .searchrow(style='display:flex; gap:8px; align-items:center')
-      input.form-control(type='text', [(ngModel)]='searchText', (ngModelChange)='applyFilter()', placeholder='Filter current directory…')
-      div(style='opacity:.7; white-space:nowrap') {{ status }}
+      input.form-control(type='text', style='background:#0b1220; color:#f8fafc; border:1px solid #334155', [(ngModel)]='searchText', (ngModelChange)='applyFilter()', placeholder='Filter current directory…')
+      div(style='color:#cbd5e1; white-space:nowrap') {{ status }}
 
-  .main(style='display:grid; grid-template-columns: minmax(420px, 46%) 1fr; gap:0; flex:1; min-height:0')
+  .main(style='display:grid; grid-template-columns: minmax(460px, 48%) 1fr; gap:0; flex:1; min-height:0')
     .pane.left(
-      style='display:flex; flex-direction:column; min-height:0; border-right:1px solid rgba(255,255,255,0.08); position:relative',
+      style='display:flex; flex-direction:column; min-height:0; border-right:1px solid #334155; position:relative; background:#0b1220',
       [style.outline]='dragActive ? "2px dashed #4ade80" : "none"',
       (dragover)='onDragOver($event)',
       (dragleave)='onDragLeave()',
       (drop)='onDrop($event)')
-      div(*ngIf='dragActive', style='position:absolute; inset:12px; border-radius:12px; background:rgba(74,222,128,0.08); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none') Drop file to upload
-      table(style='width:100%; border-collapse:collapse; table-layout:fixed')
-        thead
-          tr(style='text-align:left; opacity:.7')
-            th(style='padding:10px 12px; width:45%') Name
-            th(style='padding:10px 12px; width:15%') Type
-            th(style='padding:10px 12px; width:20%') Size
-            th(style='padding:10px 12px; width:20%') Actions
+      div(*ngIf='dragActive', style='position:absolute; inset:12px; border-radius:12px; background:rgba(74,222,128,0.12); display:flex; align-items:center; justify-content:center; z-index:10; pointer-events:none; color:#d1fae5; font-size:18px; font-weight:700') Drop file(s) to queue upload
       div(style='overflow:auto; flex:1')
         table(style='width:100%; border-collapse:collapse; table-layout:fixed')
+          thead(style='position:sticky; top:0; z-index:2; background:#0f172a')
+            tr(style='text-align:left; color:#cbd5e1; border-bottom:1px solid #334155')
+              th(style='padding:10px 12px; width:58%') Name
+              th(style='padding:10px 12px; width:16%') Type
+              th(style='padding:10px 12px; width:26%') Size
           tbody
-            tr(*ngFor='let item of filteredItems; let i=index', [style.background]='i === selectedIndex ? "rgba(59,130,246,0.14)" : "transparent"', style='border-top:1px solid rgba(255,255,255,0.06); cursor:default', (click)='selectItem(item)', (dblclick)='openItem(item)')
-              td(style='padding:10px 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis')
-                span(*ngIf='renameTarget !== item.path') {{ item.path.split('/').pop() || item.path }}
-                input.form-control(*ngIf='renameTarget === item.path', type='text', [(ngModel)]='renameValue', (keyup.enter)='commitRename(item)', (keyup.escape)='cancelRename()')
+            tr(*ngFor='let item of filteredItems; let i=index', [style.background]='i === selectedIndex ? "#1d4ed8" : "transparent"', [style.color]='i === selectedIndex ? "#ffffff" : "#e5e7eb"', style='border-bottom:1px solid #1e293b; cursor:default', (click)='selectItem(item)', (dblclick)='openItem(item)', (contextmenu)='showContextMenu($event, item)')
+              td(style='padding:10px 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600') {{ baseName(item.path) }}
               td(style='padding:10px 12px') {{ item.is_dir ? 'dir' : 'file' }}
               td(style='padding:10px 12px') {{ item.size }}
-              td(style='padding:10px 12px')
-                div(style='display:flex; gap:6px; flex-wrap:wrap')
-                  button.btn.btn-sm.btn-secondary(type='button', (click)='openItem(item); $event.stopPropagation()') Open
-                  button.btn.btn-sm.btn-secondary(type='button', (click)='startRename(item); $event.stopPropagation()') Rename
-                  button.btn.btn-sm.btn-outline-danger(type='button', (click)='deleteItem(item); $event.stopPropagation()') Delete
-    .pane.right(style='display:flex; flex-direction:column; min-height:0')
-      .previewHeader(style='padding:12px 14px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; gap:12px; align-items:center')
+
+    .pane.right(style='display:flex; flex-direction:column; min-height:0; background:#111827')
+      .previewHeader(style='padding:12px 14px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; gap:12px; align-items:center; background:#0f172a')
         div
-          h4(style='margin:0') Preview / Editor
-          div(style='opacity:.7; font-size:.9em') {{ selectedPath || 'Select a file from the left pane' }}
+          h4(style='margin:0; color:#f8fafc') Preview / Editor
+          div(style='color:#94a3b8; font-size:.9em') {{ selectedPath || 'Select a file from the left pane' }}
         div(style='display:flex; gap:8px')
           button.btn.btn-sm.btn-secondary(type='button', (click)='downloadSelected()', [disabled]='busy || !selectedPath') Download
-          button.btn.btn-sm.btn-primary(type='button', (click)='saveSelected()', [disabled]='busy || !selectedPath') Save
-      textarea.form-control(style='flex:1; min-height:0; border:none; border-radius:0; background:transparent; padding:14px', [(ngModel)]='selectedContent', [disabled]='busy || !selectedPath', placeholder='Open a text file to preview or edit it')
+          button.btn.btn-sm.btn-primary(type='button', (click)='saveSelected()', [disabled]='busy || !selectedPath || !selectedIsText') Save
+      div(style='flex:1; min-height:0; display:flex')
+        textarea.form-control(*ngIf='selectedPath && selectedIsText', style='flex:1; min-height:0; border:none; border-radius:0; background:#111827; color:#f8fafc; padding:14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace', [(ngModel)]='selectedContent', [disabled]='busy', placeholder='Open a text file to preview or edit it')
+        div(*ngIf='selectedPath && !selectedIsText', style='flex:1; display:flex; align-items:center; justify-content:center; text-align:center; color:#cbd5e1; padding:24px')
+          div
+            div(style='font-size:20px; font-weight:700; margin-bottom:10px') This file type is not previewed inline
+            div(style='margin-bottom:16px; color:#94a3b8') Download the file to inspect it locally.
+            button.btn.btn-primary(type='button', (click)='downloadSelected()') Download file
+        div(*ngIf='!selectedPath', style='flex:1; display:flex; align-items:center; justify-content:center; text-align:center; color:#94a3b8') Select a file from the left pane to preview or edit it.
+
+  .contextMenu(*ngIf='contextMenuVisible && contextItem', [style.left.px]='contextMenuX', [style.top.px]='contextMenuY', style='position:fixed; z-index:1000; min-width:180px; background:#0f172a; border:1px solid #334155; border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.45); padding:6px')
+    button.btn.btn-link(type='button', style='display:block; width:100%; text-align:left; color:#f8fafc; text-decoration:none; padding:8px 10px', (click)='openItem(contextItem); hideContextMenu()') Open
+    button.btn.btn-link(type='button', style='display:block; width:100%; text-align:left; color:#f8fafc; text-decoration:none; padding:8px 10px', (click)='openRenamePrompt(contextItem); hideContextMenu()') Rename
+    button.btn.btn-link(type='button', style='display:block; width:100%; text-align:left; color:#fca5a5; text-decoration:none; padding:8px 10px', (click)='deleteItem(contextItem); hideContextMenu()') Delete
+
+  .promptOverlay(*ngIf='promptVisible', style='position:fixed; inset:0; background:rgba(2,6,23,.65); z-index:1100; display:flex; align-items:center; justify-content:center')
+    .promptCard(style='width:420px; background:#0f172a; border:1px solid #334155; border-radius:14px; padding:18px; box-shadow:0 20px 50px rgba(0,0,0,.45)')
+      h3(style='margin-top:0; color:#f8fafc') {{ promptTitle }}
+      input.form-control(type='text', style='background:#0b1220; color:#f8fafc; border:1px solid #334155', [(ngModel)]='promptValue', [placeholder]='promptPlaceholder', (keyup.enter)='confirmPrompt()', (keyup.escape)='closePrompt()')
+      div(style='display:flex; justify-content:flex-end; gap:10px; margin-top:16px')
+        button.btn.btn-secondary(type='button', (click)='closePrompt()') Cancel
+        button.btn.btn-primary(type='button', (click)='confirmPrompt()') Confirm
+
+  .transferOverlay(*ngIf='transfersVisible', style='position:fixed; right:16px; bottom:16px; width:360px; max-height:50vh; overflow:auto; z-index:900; background:#0f172a; border:1px solid #334155; border-radius:14px; box-shadow:0 20px 50px rgba(0,0,0,.45)')
+    div(style='padding:12px 14px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center')
+      b(style='color:#f8fafc') Transfers
+      button.btn.btn-sm.btn-secondary(type='button', (click)='transfersVisible = false') Hide
+    div(*ngIf='!transfers.length', style='padding:14px; color:#94a3b8') No uploads or downloads yet.
+    div(*ngFor='let transfer of transfers', style='padding:12px 14px; border-bottom:1px solid #1e293b')
+      div(style='display:flex; justify-content:space-between; gap:12px; margin-bottom:6px')
+        div(style='color:#f8fafc; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis') {{ transfer.name }}
+        div(style='color:#94a3b8; font-size:.9em') {{ transfer.direction }}
+      div(style='color:#94a3b8; font-size:.9em; margin-bottom:8px') {{ transfer.status }} • {{ transferRate(transfer) }}
+      div(style='height:8px; border-radius:999px; background:#1e293b; overflow:hidden; margin-bottom:8px')
+        div(*ngIf='transferPercent(transfer) !== null', [style.width.%]='transferPercent(transfer)', style='height:100%; background:#3b82f6')
+        div(*ngIf='transferPercent(transfer) === null && transfer.status === "running"', style='height:100%; width:45%; background:linear-gradient(90deg,#334155,#60a5fa,#334155)')
+      div(style='display:flex; justify-content:space-between; align-items:center')
+        div(style='color:#cbd5e1; font-size:.9em') {{ transfer.bytesDone }} / {{ transfer.bytesTotal || 'unknown' }} bytes
+        button.btn.btn-sm.btn-outline-danger(type='button', *ngIf='transfer.status === "running"', (click)='cancelTransfer(transfer)') Cancel

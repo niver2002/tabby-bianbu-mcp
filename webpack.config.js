@@ -1,15 +1,17 @@
 const path = require('path')
 
+const mode = process.env.NODE_ENV === 'development' ? 'development' : 'production'
+
 module.exports = {
   target: 'node',
   entry: 'src/index.ts',
-  mode: 'development',
+  mode,
   devtool: 'source-map',
   context: __dirname,
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'index.js',
-    pathinfo: true,
+    pathinfo: mode !== 'production',
     libraryTarget: 'umd',
     devtoolModuleFilenameTemplate: 'webpack-tabby-bianbu-mcp:///[resource-path]',
   },

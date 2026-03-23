@@ -1,11 +1,33 @@
-import { AppService, ConfigService } from 'tabby-core';
+import { AppService, ConfigService, NotificationsService, PlatformService } from 'tabby-core';
+import { BianbuMcpService } from './mcp.service';
+import { RemoteHealthInfo } from './remoteRelease';
 /** @hidden */
 export declare class BianbuMcpSettingsComponent {
     config: ConfigService;
     private app;
-    constructor(config: ConfigService, app: AppService);
+    private mcp;
+    private notifications;
+    private platform;
+    diagnosticsBusy: boolean;
+    maintenanceBusy: boolean;
+    remoteHealth: RemoteHealthInfo | null;
+    lastDiagnosticAt: string;
+    lastMaintenanceAt: string;
+    lastMaintenanceSummary: string;
+    lastError: string;
+    constructor(config: ConfigService, app: AppService, mcp: BianbuMcpService, notifications: NotificationsService, platform: PlatformService);
+    get settings(): any;
+    get bundledInstaller(): any | null;
+    get validationErrors(): string[];
+    get latestMaintenanceSession(): any | null;
     get sampleJson(): string;
     save(): void;
     openShell(): void;
     openFiles(): void;
+    testConnection(): Promise<void>;
+    refreshHealth(notice?: string): Promise<void>;
+    pushUpgrade(action?: 'up' | 'repair'): Promise<void>;
+    downloadLocalMaintenanceLog(): Promise<void>;
+    downloadRemoteMaintenanceLog(): Promise<void>;
+    private downloadTextFile;
 }

@@ -2,40 +2,110 @@ div(style='padding: 20px; display:flex; flex-direction:column; gap:16px')
   .hero(style='padding:18px; border-radius:12px; background:linear-gradient(135deg, rgba(25,53,103,.9), rgba(17,94,89,.85)); color:white')
     h2(style='margin:0 0 8px 0') Bianbu MCP
     p(style='margin:0; opacity:.92')
-      | Configure your Bianbu Cloud MCP endpoint and open a shell-like tab or a file-manager-like tab directly from Tabby.
+      | Configure your Bianbu Cloud MCP endpoint, validate remote health, and push the latest bundled installer directly from Tabby.
 
   .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
     h3(style='margin-top:0') Quick actions
     div(style='display:flex; gap:12px; flex-wrap:wrap')
       button.btn.btn-primary(type='button', (click)='openShell()') Open Bianbu Cloud Shell
       button.btn.btn-secondary(type='button', (click)='openFiles()') Open Bianbu Cloud Files
+      button.btn.btn-secondary(type='button', (click)='testConnection()', [disabled]='diagnosticsBusy || validationErrors.length > 0') Test connection
+      button.btn.btn-secondary(type='button', (click)='refreshHealth()', [disabled]='diagnosticsBusy || validationErrors.length > 0') Fetch remote health
 
   .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
     h3(style='margin-top:0') Connection settings
-    .grid(style='display:grid; grid-template-columns: 160px 1fr; gap:12px; align-items:center')
-      label Enable integration
-      input(type='checkbox', [(ngModel)]='config.store.bianbuMcp.enabled', (ngModelChange)='save()')
-
+    .grid(style='display:grid; grid-template-columns: 190px 1fr; gap:12px; align-items:center')
       label Profile name
-      input.form-control(type='text', [(ngModel)]='config.store.bianbuMcp.name', (ngModelChange)='save()', placeholder='bianbu')
+      input.form-control(type='text', [(ngModel)]='settings.name', (ngModelChange)='save()', placeholder='bianbu')
 
       label MCP URL
-      input.form-control(type='text', [(ngModel)]='config.store.bianbuMcp.url', (ngModelChange)='save()', placeholder='https://your-domain.example.com/mcp')
+      input.form-control(type='text', [(ngModel)]='settings.url', (ngModelChange)='save()', placeholder='https://your-domain.example.com/mcp')
 
       label X-API-KEY
-      input.form-control(type='password', [(ngModel)]='config.store.bianbuMcp.apiKey', (ngModelChange)='save()', placeholder='your-x-api-key')
+      input.form-control(type='password', [(ngModel)]='settings.apiKey', (ngModelChange)='save()', placeholder='your-x-api-key')
 
-      label Interval (ms)
-      input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.minIntervalMs', (ngModelChange)='save()')
+      label Interactive slots
+      input.form-control(type='number', min='1', step='1', [(ngModel)]='settings.interactiveConcurrency', (ngModelChange)='save()')
+
+      label Transfer slots
+      input.form-control(type='number', min='1', max='30', step='1', [(ngModel)]='settings.transferConcurrency', (ngModelChange)='save()')
+
+      label Worker cadence (ms)
+      input.form-control(type='number', min='10', step='10', [(ngModel)]='settings.workerCadenceMs', (ngModelChange)='save()')
 
       label Max retries
-      input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.maxRetries', (ngModelChange)='save()')
+      input.form-control(type='number', min='0', [(ngModel)]='settings.maxRetries', (ngModelChange)='save()')
 
       label Retry base (ms)
-      input.form-control(type='number', min='0', [(ngModel)]='config.store.bianbuMcp.retryBaseMs', (ngModelChange)='save()')
+      input.form-control(type='number', min='0', [(ngModel)]='settings.retryBaseMs', (ngModelChange)='save()')
+
+      label Upload chunk (bytes)
+      input.form-control(type='number', min='16384', step='1024', [(ngModel)]='settings.uploadChunkBytes', (ngModelChange)='save()')
+
+      label Download chunk (bytes)
+      input.form-control(type='number', min='16384', step='1024', [(ngModel)]='settings.downloadChunkBytes', (ngModelChange)='save()')
 
       label Notes
-      textarea.form-control(rows='3', [(ngModel)]='config.store.bianbuMcp.notes', (ngModelChange)='save()', placeholder='Optional notes')
+      textarea.form-control(rows='3', [(ngModel)]='settings.notes', (ngModelChange)='save()', placeholder='Optional notes')
+
+  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Remote maintenance
+    .grid(style='display:grid; grid-template-columns: 190px 1fr; gap:12px; align-items:center')
+      label Installer remote path
+      input.form-control(type='text', [(ngModel)]='settings.installerRemotePath', (ngModelChange)='save()', placeholder='/tmp/bianbu_agent_proxy.sh')
+
+      label Maintenance as root
+      input(type='checkbox', [(ngModel)]='settings.maintenanceAsRoot', (ngModelChange)='save()')
+
+      label Reconnect poll (ms)
+      input.form-control(type='number', min='500', [(ngModel)]='settings.reconnectPollMs', (ngModelChange)='save()')
+
+      label Health timeout (ms)
+      input.form-control(type='number', min='5000', [(ngModel)]='settings.upgradeHealthTimeoutMs', (ngModelChange)='save()')
+
+    div(style='display:flex; gap:12px; flex-wrap:wrap; margin-top:16px')
+      button.btn.btn-primary(type='button', (click)='pushUpgrade("up")', [disabled]='maintenanceBusy || validationErrors.length > 0') Push latest installer + upgrade
+      button.btn.btn-secondary(type='button', (click)='pushUpgrade("repair")', [disabled]='maintenanceBusy || validationErrors.length > 0') Push latest installer + repair
+
+    div(*ngIf='lastMaintenanceAt', style='margin-top:12px; color:#cbd5e1')
+      b Last maintenance:
+      |  {{ lastMaintenanceAt }}
+      br
+      span {{ lastMaintenanceSummary }}
+      div(*ngIf='latestMaintenanceSession', style='margin-top:8px')
+        div Session: {{ latestMaintenanceSession.sessionName }}
+        div(style='display:flex; gap:12px; flex-wrap:wrap; margin-top:8px')
+          button.btn.btn-secondary(type='button', (click)='downloadLocalMaintenanceLog()', [disabled]='maintenanceBusy') Download local session log
+          button.btn.btn-secondary(type='button', (click)='downloadRemoteMaintenanceLog()', [disabled]='maintenanceBusy || validationErrors.length > 0') Download remote session log
+
+  .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
+    h3(style='margin-top:0') Release diagnostics
+    div(style='display:grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap:12px')
+      div(style='padding:12px; border-radius:10px; background:rgba(255,255,255,0.02)')
+        b Bundled installer
+        div(style='margin-top:8px; opacity:.9') Script version: {{ bundledInstaller?.scriptVersion || 'unavailable' }}
+        div(style='opacity:.9') Server version: {{ bundledInstaller?.serverVersion || 'unavailable' }}
+        div(style='opacity:.9') SHA-256: {{ bundledInstaller?.sha256 || 'unavailable' }}
+      div(style='padding:12px; border-radius:10px; background:rgba(255,255,255,0.02)')
+        b Remote status
+        div(style='margin-top:8px; opacity:.9') Remote script version: {{ remoteHealth?.scriptVersion || 'unknown' }}
+        div(style='opacity:.9') Remote server version: {{ remoteHealth?.serverVersion || 'unknown' }}
+        div(style='opacity:.9') Transport: {{ remoteHealth?.transportMode || 'unknown' }}
+        div(style='opacity:.9') FILE_ROOT: {{ remoteHealth?.fileRoot || 'unknown' }}
+        div(style='opacity:.9') Supports rename_path: {{ remoteHealth?.supports?.renamePath ? 'yes' : 'no' }}
+        div(style='opacity:.9') Supports shell sessions: {{ remoteHealth?.supports?.shellSession ? 'yes' : 'no' }}
+        div(style='opacity:.9') Supports chunked transfers: {{ remoteHealth?.supports?.chunkedTransfers ? 'yes' : 'no' }}
+        div(style='opacity:.9') Supports parallel chunk offsets: {{ remoteHealth?.supports?.parallelChunkOffsets ? 'yes' : 'no' }}
+        div(style='opacity:.9') Last diagnostic: {{ lastDiagnosticAt || 'never' }}
+
+    div(*ngIf='validationErrors.length', style='margin-top:16px; color:#fca5a5')
+      b Configuration issues
+      ul(style='margin:8px 0 0 18px')
+        li(*ngFor='let error of validationErrors') {{ error }}
+
+    div(*ngIf='lastError', style='margin-top:16px; color:#fca5a5; white-space:pre-wrap')
+      b Last error
+      div(style='margin-top:8px') {{ lastError }}
 
   .card(style='padding:16px; border-radius:10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08)')
     h3(style='margin-top:0') Copyable MCP snippet
@@ -46,4 +116,5 @@ div(style='padding: 20px; display:flex; flex-direction:column; gap:16px')
     ul(style='margin-bottom:0')
       li MCP URL is typically #[code https://&lt;domain&gt;/mcp]
       li #[code X-API-KEY] is copied from the Bianbu Cloud API Key page
+      li Push-upgrade uploads the bundled installer to the configured remote path, launches it remotely, then waits for health to recover
       li Shell and Files tabs are UI views backed by MCP calls, not native SSH/SFTP transport

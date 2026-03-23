@@ -3,14 +3,21 @@ import { ConfigProvider } from 'tabby-core';
 export declare class BianbuMcpConfigProvider extends ConfigProvider {
     defaults: {
         bianbuMcp: {
-            enabled: boolean;
             name: string;
             url: string;
             apiKey: string;
-            minIntervalMs: number;
             maxRetries: number;
             retryBaseMs: number;
+            interactiveConcurrency: number;
+            transferConcurrency: number;
+            workerCadenceMs: number;
+            uploadChunkBytes: number;
+            downloadChunkBytes: number;
             notes: string;
+            installerRemotePath: string;
+            maintenanceAsRoot: boolean;
+            reconnectPollMs: number;
+            upgradeHealthTimeoutMs: number;
         };
     };
 }

@@ -8,10 +8,11 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
+    "newLine": "lf",
     "skipLibCheck": true,
     "strict": false,
     "lib": ["es2019", "dom"],
     "types": ["webpack-env"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*.ts"]
 }

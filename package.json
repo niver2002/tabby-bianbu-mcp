@@ -1,9 +1,17 @@
 {
   "name": "tabby-bianbu-mcp",
-  "version": "0.3.1",
+  "version": "0.5.4",
   "description": "Tabby plugin for Bianbu Cloud shell-like and file-manager-like tabs over MCP",
   "author": "niver2002",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/niver2002/tabby-bianbu-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/niver2002/tabby-bianbu-mcp/issues"
+  },
+  "homepage": "https://github.com/niver2002/tabby-bianbu-mcp#readme",
   "keywords": [
     "tabby-plugin",
     "mcp",
@@ -13,12 +21,26 @@
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "assets",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "webpack --progress --color",
-    "watch": "webpack --progress --color --watch",
-    "prepublishOnly": "npm run build"
+    "sync:remote-assets": "node scripts/sync-remote-assets.mjs",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build": "npm run sync:remote-assets && npm run build:types && webpack --progress --color",
+    "watch": "npm run sync:remote-assets && webpack --progress --color --watch",
+    "test": "node --test tests/*.test.mjs",
+    "verify": "npm test && npm run build && npm pack --dry-run",
+    "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
     "@angular/common": "15.2.10",

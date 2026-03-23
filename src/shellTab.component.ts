@@ -47,6 +47,6 @@ export class BianbuCloudShellTabComponent extends BaseTerminalTabComponent<any> 
     await session.start({ cwd: this.cwd, asRoot: this.asRoot })
     session.releaseInitialDataBuffer()
     this.localNotifications.notice('Bianbu Cloud shell ready')
-    super.onFrontendReady()
+    await super.onFrontendReady()
   }
 }
