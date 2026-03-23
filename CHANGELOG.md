@@ -2,6 +2,12 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.8.3] - 2026-03-23
+
+### Fixed
+- **PTY input latency**: all PTY calls (`write_pty_input`, `resize_pty`, `close_pty_session`) now bypass the interactive RequestLane — previously input keystrokes could queue behind file operations for hundreds of ms
+- **resize debounce**: rapid resize events (dragging window edge) are debounced at 100ms and skip no-op same-size resizes
+
 ## [0.8.2] - 2026-03-23
 
 ### Fixed

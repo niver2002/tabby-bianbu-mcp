@@ -8,6 +8,11 @@ export class BianbuPtySession extends BaseSession {
   private pollAbort: AbortController | null = null
   private inputQueue: Buffer[] = []
   private inputFlushTimer: any = null
+  private initialCols = 80
+  private initialRows = 24
+  private lastCols = 0
+  private lastRows = 0
+  private resizeTimer: any = null
 
   constructor (
     logger: Logger,
@@ -18,14 +23,18 @@ export class BianbuPtySession extends BaseSession {
 
   async start (options: { cwd?: string, asRoot?: boolean, cols?: number, rows?: number } = {}): Promise<void> {
     this.open = true
+    this.initialCols = options.cols || 80
+    this.initialRows = options.rows || 24
     const result = await this.mcp.openPtySession(
       options.cwd || '.',
       options.asRoot || false,
-      options.cols || 80,
-      options.rows || 24,
+      this.initialCols,
+      this.initialRows,
     )
     this.sessionId = result.session_id
     this.alive = true
+    this.lastCols = this.initialCols
+    this.lastRows = this.initialRows
     this.startPollLoop()
   }
 
@@ -40,9 +49,24 @@ export class BianbuPtySession extends BaseSession {
   }
 
   resize (columns: number, rows: number): void {
-    if (this.sessionId && this.alive) {
-      this.mcp.resizePty(this.sessionId, columns, rows).catch(() => {})
+    if (!this.sessionId || !this.alive) {
+      return
     }
+    if (columns === this.lastCols && rows === this.lastRows) {
+      return
+    }
+    this.lastCols = columns
+    this.lastRows = rows
+    // Debounce rapid resize events (e.g. dragging window edge)
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer)
+    }
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = null
+      if (this.sessionId && this.alive) {
+        this.mcp.resizePty(this.sessionId, columns, rows).catch(() => {})
+      }
+    }, 100)
   }
 
   kill (): void {
@@ -118,6 +142,10 @@ export class BianbuPtySession extends BaseSession {
     if (this.inputFlushTimer) {
       clearTimeout(this.inputFlushTimer)
       this.inputFlushTimer = null
+    }
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer)
+      this.resizeTimer = null
     }
     if (this.sessionId) {
       const id = this.sessionId

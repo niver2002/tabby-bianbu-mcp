@@ -497,10 +497,10 @@ export class BianbuMcpService {
   }
 
   async writePtyInput (sessionId: string, dataBase64: string): Promise<any> {
-    return this.callTool('write_pty_input', {
+    return this.executePtyRequest('write_pty_input', {
       session_id: sessionId,
       data_base64: dataBase64,
-    }, undefined, 'interactive')
+    })
   }
 
   /**
@@ -508,29 +508,38 @@ export class BianbuMcpService {
    * blocking the interactive lane for up to 5 seconds per poll cycle.
    */
   async readPtyOutputDirect (sessionId: string, signal?: AbortSignal): Promise<any> {
-    return this.executeRequest({
-      jsonrpc: '2.0',
-      id: `pty-read-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      method: 'tools/call',
-      params: {
-        name: 'read_pty_output',
-        arguments: { session_id: sessionId, timeout_ms: 5000 },
-      },
+    return this.executePtyRequest('read_pty_output', {
+      session_id: sessionId,
+      timeout_ms: 5000,
     }, signal)
   }
 
   async resizePty (sessionId: string, cols: number, rows: number): Promise<any> {
-    return this.callTool('resize_pty', {
+    return this.executePtyRequest('resize_pty', {
       session_id: sessionId,
       cols,
       rows,
-    }, undefined, 'interactive')
+    })
   }
 
   async closePtySession (sessionId: string): Promise<any> {
-    return this.callTool('close_pty_session', {
+    return this.executePtyRequest('close_pty_session', {
       session_id: sessionId,
-    }, undefined, 'interactive')
+    })
+  }
+
+  /**
+   * All PTY calls bypass the RequestLane to avoid queuing behind other
+   * operations. This is critical for input latency (write_pty_input)
+   * and for long-poll reads that would otherwise block the lane.
+   */
+  private async executePtyRequest (toolName: string, args: any, signal?: AbortSignal): Promise<any> {
+    return this.executeRequest({
+      jsonrpc: '2.0',
+      id: `pty-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      method: 'tools/call',
+      params: { name: toolName, arguments: args },
+    }, signal)
   }
 
   async listDirectory (path: string, asRoot: boolean): Promise<any> {
