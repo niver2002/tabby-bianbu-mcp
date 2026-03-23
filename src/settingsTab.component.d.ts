@@ -32,7 +32,7 @@ export declare class BianbuMcpSettingsComponent {
     openFiles(): void;
     testConnection(): Promise<void>;
     refreshHealth(notice?: string): Promise<void>;
-    pushUpgrade(action?: 'up' | 'repair'): Promise<void>;
+    pushUpgrade(): Promise<void>;
     cancelMaintenance(): void;
     downloadLocalMaintenanceLog(): Promise<void>;
     downloadRemoteMaintenanceLog(): Promise<void>;

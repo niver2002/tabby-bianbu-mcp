@@ -2,6 +2,14 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.9.2] - 2026-03-23
+
+### Removed
+- **Push Repair button**: removed from the UI. Repair requires MCP connectivity, but if the service is broken enough to need repair, MCP itself is unreachable — making the button useless. For a broken server, SSH in and run `sudo ./bianbu_agent_proxy.sh bootstrap` instead.
+
+### Changed
+- README updated: removed all Repair references, added guidance to SSH + bootstrap for broken servers
+
 ## [0.9.1] - 2026-03-23
 
 ### Fixed

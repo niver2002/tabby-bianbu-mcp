@@ -474,14 +474,12 @@ Copy the auto-generated JSON config for other MCP clients:
 
 The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server installer with **blue/green deployment** and **automatic rollback**.
 
-**Push Upgrade** — updates the remote server to the version bundled with your plugin.
-
-**Push Repair** — re-deploys from scratch (useful when the remote is broken).
+**Push Upgrade** — updates the remote server to the version bundled with your plugin (blue/green, safe).
 
 **What happens when you click:**
 1. Upload bundled installer → remote host (chunked, with progress bar)
-2. Launch detached `up` or `repair` process
-3. Installer stages the new release, validates with `node`, then swaps atomically
+2. Launch detached `up` process
+3. Installer stages the new release in a temporary directory, validates with `node`, then swaps atomically
 4. Plugin polls remote health until expected version appears
 5. On failure: previous installation is auto-restored
 
@@ -493,7 +491,7 @@ The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server insta
 
 **After maintenance**, download session logs from the Settings page for debugging.
 
-> **Note:** `ENABLE_PASSWORDLESS_SUDO` defaults to `false`. Opt in explicitly if needed.
+> **If the service is completely broken** (e.g. Node.js removed, server won't start at all), Push Upgrade can't help — SSH into the VM and run `sudo ./bianbu_agent_proxy.sh bootstrap` to reinstall from scratch.
 
 </td><td width="50%">
 
@@ -501,14 +499,12 @@ The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server insta
 
 插件内置了 `bianbu_agent_proxy.sh` — 一个自包含的 MCP 服务器安装脚本，支持**蓝绿部署**和**自动回滚**。
 
-**Push Upgrade（推送升级）** — 将远端服务器更新到插件内置的版本。
-
-**Push Repair（推送修复）** — 从头重新部署（适用于远端损坏时）。
+**Push Upgrade（推送升级）** — 将远端服务器更新到插件内置的版本（蓝绿部署，安全）。
 
 **点击按钮后的流程：**
 1. 分块上传内置安装脚本到远端主机（带进度条）
-2. 后台启动 `up` 或 `repair` 进程
-3. 安装脚本在暂存区准备新版本，用 `node` 验证后原子切换
+2. 后台启动 `up` 进程
+3. 安装脚本在临时目录准备新版本，用 `node` 验证后原子切换
 4. 插件持续轮询远端健康状态，直到出现预期版本号
 5. 如果失败：自动还原之前的安装
 
@@ -520,7 +516,7 @@ The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server insta
 
 **维护完成后**，可在设置页下载会话日志用于排查问题。
 
-> **注意:** `ENABLE_PASSWORDLESS_SUDO` 默认为 `false`，如需免密 sudo 提权请显式开启。
+> **如果服务彻底坏了**（如 Node.js 被删、服务完全无法启动），Push Upgrade 无法修复 — 请 SSH 登录主机执行 `sudo ./bianbu_agent_proxy.sh bootstrap` 重新安装。
 
 </td></tr>
 </table>
@@ -550,11 +546,11 @@ The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server insta
 </tr>
 <tr>
 <td>Shell works but no PTY (no colors, no vim)</td>
-<td>Remote server < v1.5.0 doesn't support PTY. Use <b>Push Repair</b> to update.<br/><br/>远端服务器 < v1.5.0 不支持 PTY。使用 <b>Push Repair</b> 更新。</td>
+<td>Remote server < v1.5.0 doesn't support PTY. Use <b>Push Upgrade</b> to update.<br/><br/>远端服务器 < v1.5.0 不支持 PTY。使用 <b>Push Upgrade</b> 更新。</td>
 </tr>
 <tr>
 <td>Health check shows <code>unknown</code> versions</td>
-<td>Remote server is very old. Use <b>Push Repair</b> to redeploy from scratch.<br/><br/>远端服务器版本过旧。使用 <b>Push Repair</b> 从头重新部署。</td>
+<td>Remote server is very old. Use <b>Push Upgrade</b> to update, or SSH in and run <code>sudo ./bianbu_agent_proxy.sh bootstrap</code>.<br/><br/>远端服务器版本过旧。使用 <b>Push Upgrade</b> 更新，或 SSH 登录执行 <code>sudo ./bianbu_agent_proxy.sh bootstrap</code>。</td>
 </tr>
 </tbody>
 </table>

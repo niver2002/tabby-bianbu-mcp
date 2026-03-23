@@ -99,7 +99,7 @@ export class BianbuMcpSettingsComponent {
     }
   }
 
-  async pushUpgrade (action: 'up' | 'repair' = 'up'): Promise<void> {
+  async pushUpgrade (): Promise<void> {
     this.lastError = ''
     this.maintenanceBusy = true
     this.maintenanceElapsed = 0
@@ -109,7 +109,6 @@ export class BianbuMcpSettingsComponent {
     this.elapsedTimer = setInterval(() => { this.maintenanceElapsed++ }, 1000)
     try {
       const result = await this.mcp.pushInstallerAndUpgrade({
-        action,
         asRoot: !!this.settings.maintenanceAsRoot,
         healthTimeoutMs: this.settings.upgradeHealthTimeoutMs,
         onProgress: (p) => { this.maintenanceProgress = p },
@@ -120,10 +119,10 @@ export class BianbuMcpSettingsComponent {
       this.remoteHealth = result.health
       this.lastMaintenanceAt = new Date().toLocaleString()
       this.lastMaintenanceSummary = `session=${result.session?.sessionName || 'unknown'} action=${result.action} remotePath=${result.remotePath} logPath=${result.logPath} statusPath=${result.statusPath} script=${result.health.scriptVersion || 'unknown'} server=${result.health.serverVersion || 'unknown'}`
-      this.notifications.notice(action === 'repair' ? 'Remote repair finished' : 'Remote upgrade finished')
+      this.notifications.notice('Remote upgrade finished')
     } catch (error: any) {
       this.lastMaintenanceAt = new Date().toLocaleString()
-      this.lastMaintenanceSummary = `session=${this.latestMaintenanceSession?.sessionName || 'unknown'} action=${action} remotePath=${this.settings.installerRemotePath || 'unknown'} logPath=${this.latestMaintenanceSession?.remoteLogPath || 'unknown'} statusPath=${this.latestMaintenanceSession?.remoteStatusPath || 'unknown'}`
+      this.lastMaintenanceSummary = `session=${this.latestMaintenanceSession?.sessionName || 'unknown'} action=up remotePath=${this.settings.installerRemotePath || 'unknown'} logPath=${this.latestMaintenanceSession?.remoteLogPath || 'unknown'} statusPath=${this.latestMaintenanceSession?.remoteStatusPath || 'unknown'}`
       if (error?.name === 'AbortError') {
         this.lastError = 'Operation cancelled by user'
         this.notifications.info('Maintenance cancelled')
@@ -133,7 +132,7 @@ export class BianbuMcpSettingsComponent {
         if (this.maintenanceProgress) {
           this.maintenanceProgress = { ...this.maintenanceProgress, error: true, label: `Failed at: ${stepLabel}` }
         }
-        this.notifications.error(action === 'repair' ? 'Remote repair failed' : 'Remote upgrade failed', this.lastError)
+        this.notifications.error('Remote upgrade failed', this.lastError)
       }
     } finally {
       clearInterval(this.elapsedTimer)
