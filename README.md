@@ -111,6 +111,7 @@
 
 **🔧 Remote Maintenance**
 - One-click push-upgrade from Tabby
+- Step-by-step progress bar with cancel support
 - Auto-rollback on failed deployments
 - Remote health diagnostics & version tracking
 - Downloadable session logs (local + remote)
@@ -120,6 +121,7 @@
 
 **🔧 远程维护**
 - Tabby 内一键推送升级
+- 分步进度条，支持取消
 - 部署失败自动回滚
 - 远程健康诊断和版本追踪
 - 可下载会话日志（本地 + 远端）
@@ -136,27 +138,193 @@
 ## 📦 Installation / 安装
 
 <table>
+<thead>
+<tr><th>Step / 步骤</th><th>English</th><th>中文</th></tr>
+</thead>
+<tbody>
 <tr>
-<td><b>npm (recommended)</b></td>
+<td><b>1. Install Tabby</b></td>
 <td>
 
+Download from [tabby.sh](https://tabby.sh) — available for Windows, macOS, Linux.
+
+</td>
+<td>
+
+从 [tabby.sh](https://tabby.sh) 下载安装 — 支持 Windows、macOS、Linux。
+
+</td>
+</tr>
+<tr>
+<td><b>2. Install Plugin</b></td>
+<td>
+
+Open Tabby → **Settings** → **Plugins** → search `tabby-bianbu-mcp` → **Install**.
+
+Or via npm:
+```bash
+npm install tabby-bianbu-mcp
+```
+
+</td>
+<td>
+
+打开 Tabby → **设置** → **插件** → 搜索 `tabby-bianbu-mcp` → **安装**。
+
+或通过 npm：
 ```bash
 npm install tabby-bianbu-mcp
 ```
 
 </td>
 </tr>
+</tbody>
+</table>
+
+<br/>
+
+---
+
+## 🖥 First-time Server Setup / 首次服务端部署
+
+> The plugin connects to a **remote MCP server** running on your Bianbu Cloud VM. You need to deploy it once before the plugin can work.
+>
+> 插件通过连接运行在算能云主机上的 **MCP 服务** 来工作。首次使用前需要在远端部署一次。
+
+<table>
+<thead>
+<tr><th width="50%">English</th><th width="50%">中文</th></tr>
+</thead>
+<tbody>
 <tr>
-<td><b>Tabby Plugin Manager</b></td>
 <td>
 
-Search for `tabby-bianbu-mcp` in **Settings → Plugins → Install from npm**
+**Option A: One-command install (recommended)**
 
-在 **设置 → 插件 → 从 npm 安装** 中搜索 `tabby-bianbu-mcp`
+SSH into your Bianbu Cloud VM and run:
+
+```bash
+wget https://github.com/niver2002/tabby-bianbu-mcp/releases/latest/download/bianbu_agent_proxy.sh
+chmod +x bianbu_agent_proxy.sh
+sudo ./bianbu_agent_proxy.sh bootstrap
+```
+
+This will:
+1. Create a `bianbu` system user
+2. Install Node.js (if not present)
+3. Deploy the MCP server to `/opt/bianbu-mcp-server/`
+4. Register and start a systemd service
+5. Listen on `http://0.0.0.0:11434/mcp`
+
+</td>
+<td>
+
+**方式 A：一键安装（推荐）**
+
+SSH 登录算能云主机，执行：
+
+```bash
+wget https://github.com/niver2002/tabby-bianbu-mcp/releases/latest/download/bianbu_agent_proxy.sh
+chmod +x bianbu_agent_proxy.sh
+sudo ./bianbu_agent_proxy.sh bootstrap
+```
+
+这会：
+1. 创建 `bianbu` 系统用户
+2. 安装 Node.js（如果没有）
+3. 部署 MCP 服务到 `/opt/bianbu-mcp-server/`
+4. 注册并启动 systemd 服务
+5. 监听 `http://0.0.0.0:11434/mcp`
 
 </td>
 </tr>
+<tr>
+<td>
+
+**Option B: Upload via SCP/SFTP**
+
+If `wget` is unavailable on the VM, copy the script from your local machine:
+
+```bash
+# On your local machine:
+scp bianbu_agent_proxy.sh user@your-vm-ip:/tmp/
+
+# Then SSH into the VM:
+ssh user@your-vm-ip
+cd /tmp
+chmod +x bianbu_agent_proxy.sh
+sudo ./bianbu_agent_proxy.sh bootstrap
+```
+
+</td>
+<td>
+
+**方式 B：通过 SCP/SFTP 上传**
+
+如果云主机上没有 `wget`，可以从本机上传：
+
+```bash
+# 在本地机器上：
+scp bianbu_agent_proxy.sh user@你的主机IP:/tmp/
+
+# 然后 SSH 登录云主机：
+ssh user@你的主机IP
+cd /tmp
+chmod +x bianbu_agent_proxy.sh
+sudo ./bianbu_agent_proxy.sh bootstrap
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Verify it's running:**
+
+```bash
+curl http://127.0.0.1:11434/health
+```
+
+You should see a JSON response with `"ok": true`.
+
+</td>
+<td>
+
+**验证是否运行：**
+
+```bash
+curl http://127.0.0.1:11434/health
+```
+
+应看到包含 `"ok": true` 的 JSON 响应。
+
+</td>
+</tr>
+</tbody>
 </table>
+
+### Environment Variables / 环境变量
+
+<table>
+<thead>
+<tr><th>Variable</th><th>Default</th><th>Description / 说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>PORT</code></td><td><code>11434</code></td><td>Server listen port / 监听端口</td></tr>
+<tr><td><code>RUN_USER</code></td><td><code>bianbu</code></td><td>System user for the service / 服务运行用户</td></tr>
+<tr><td><code>FILE_ROOT</code></td><td><code>/home/bianbu</code></td><td>File manager root / 文件管理器根目录</td></tr>
+<tr><td><code>ENABLE_PASSWORDLESS_SUDO</code></td><td><code>false</code></td><td>Allow <code>as_root=true</code> without password / 免密 sudo 提权</td></tr>
+<tr><td><code>TLS_CERT_FILE</code></td><td><i>(empty)</i></td><td>HTTPS cert path / HTTPS 证书路径</td></tr>
+<tr><td><code>TLS_KEY_FILE</code></td><td><i>(empty)</i></td><td>HTTPS key path / HTTPS 私钥路径</td></tr>
+<tr><td><code>MCP_TRANSPORT_MODE</code></td><td><code>stateless</code></td><td>MCP transport: <code>stateless</code> or <code>sse</code></td></tr>
+</tbody>
+</table>
+
+Example with custom settings / 自定义配置示例:
+
+```bash
+PORT=8080 FILE_ROOT=/data ENABLE_PASSWORDLESS_SUDO=true sudo -E ./bianbu_agent_proxy.sh bootstrap
+```
 
 <br/>
 
@@ -306,12 +474,22 @@ Copy the auto-generated JSON config for other MCP clients:
 
 The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server installer with **blue/green deployment** and **automatic rollback**.
 
-**Upgrade flow:**
-1. Upload bundled installer → remote host
+**Push Upgrade** — updates the remote server to the version bundled with your plugin.
+
+**Push Repair** — re-deploys from scratch (useful when the remote is broken).
+
+**What happens when you click:**
+1. Upload bundled installer → remote host (chunked, with progress bar)
 2. Launch detached `up` or `repair` process
 3. Installer stages the new release, validates with `node`, then swaps atomically
 4. Plugin polls remote health until expected version appears
 5. On failure: previous installation is auto-restored
+
+**Progress UI** (v0.9.0+):
+- Step-by-step progress bar: Upload → Launch → Wait → Verify
+- Elapsed time counter
+- Cancel button to abort at any stage
+- Error display shows which step failed
 
 **After maintenance**, download session logs from the Settings page for debugging.
 
@@ -323,18 +501,62 @@ The plugin bundles `bianbu_agent_proxy.sh` — a self-contained MCP server insta
 
 插件内置了 `bianbu_agent_proxy.sh` — 一个自包含的 MCP 服务器安装脚本，支持**蓝绿部署**和**自动回滚**。
 
-**升级流程:**
-1. 上传内置安装脚本到远端主机
+**Push Upgrade（推送升级）** — 将远端服务器更新到插件内置的版本。
+
+**Push Repair（推送修复）** — 从头重新部署（适用于远端损坏时）。
+
+**点击按钮后的流程：**
+1. 分块上传内置安装脚本到远端主机（带进度条）
 2. 后台启动 `up` 或 `repair` 进程
 3. 安装脚本在暂存区准备新版本，用 `node` 验证后原子切换
 4. 插件持续轮询远端健康状态，直到出现预期版本号
-5. 如果失败：自动恢复到之前的安装
+5. 如果失败：自动还原之前的安装
 
-**维护完成后**，可在设置页面下载会话日志用于调试。
+**进度 UI**（v0.9.0+）：
+- 分步进度条：上传 → 启动 → 等待 → 验证
+- 已用时间计时器
+- 取消按钮，随时中止
+- 错误提示明确显示哪个步骤失败
 
-> **注意:** `ENABLE_PASSWORDLESS_SUDO` 默认为 `false`。如需无密码 sudo，请明确开启并了解安全影响。
+**维护完成后**，可在设置页下载会话日志用于排查问题。
+
+> **注意:** `ENABLE_PASSWORDLESS_SUDO` 默认为 `false`，如需免密 sudo 提权请显式开启。
 
 </td></tr>
+</table>
+
+<br/>
+
+---
+
+## ❓ Troubleshooting / 常见问题
+
+<table>
+<thead>
+<tr><th>Problem / 问题</th><th>Solution / 解决方案</th></tr>
+</thead>
+<tbody>
+<tr>
+<td><code>connect ECONNREFUSED</code> when opening Shell/Files</td>
+<td>MCP server is not running. SSH into the VM and run <code>sudo ./bianbu_agent_proxy.sh bootstrap</code> (first time) or <code>sudo systemctl restart bianbu-mcp-server</code> (existing install).<br/><br/>MCP 服务未运行。SSH 登录主机，首次执行 <code>sudo ./bianbu_agent_proxy.sh bootstrap</code>，已安装则执行 <code>sudo systemctl restart bianbu-mcp-server</code>。</td>
+</tr>
+<tr>
+<td>Push Upgrade fails at <b>[upload]</b> step</td>
+<td>Usually a network timeout. Check your API key and domain. If <code>E2BIG</code> error, update to plugin v0.8.5+.<br/><br/>通常是网络超时。检查 API 密钥和域名。如报 <code>E2BIG</code>，请升级插件到 v0.8.5+。</td>
+</tr>
+<tr>
+<td>Push Upgrade fails at <b>[wait]</b> step with timeout</td>
+<td>The installer is slow or Node.js is not installed. SSH into VM and check:<br/><code>cat /tmp/bianbu_agent_proxy.sh.log</code><br/><code>systemctl status bianbu-mcp-server</code><br/><br/>安装脚本执行慢或 Node.js 未安装。SSH 登录查看日志：<br/><code>cat /tmp/bianbu_agent_proxy.sh.log</code></td>
+</tr>
+<tr>
+<td>Shell works but no PTY (no colors, no vim)</td>
+<td>Remote server < v1.5.0 doesn't support PTY. Use <b>Push Repair</b> to update.<br/><br/>远端服务器 < v1.5.0 不支持 PTY。使用 <b>Push Repair</b> 更新。</td>
+</tr>
+<tr>
+<td>Health check shows <code>unknown</code> versions</td>
+<td>Remote server is very old. Use <b>Push Repair</b> to redeploy from scratch.<br/><br/>远端服务器版本过旧。使用 <b>Push Repair</b> 从头重新部署。</td>
+</tr>
+</tbody>
 </table>
 
 <br/>
