@@ -485,6 +485,54 @@ export class BianbuMcpService {
     }, undefined, 'interactive')
   }
 
+  // ── PTY session methods ────────────────────────────────────
+
+  async openPtySession (cwd: string, asRoot: boolean, cols: number, rows: number): Promise<any> {
+    return this.callTool('open_pty_session', {
+      cwd,
+      as_root: asRoot,
+      cols,
+      rows,
+    }, undefined, 'interactive')
+  }
+
+  async writePtyInput (sessionId: string, dataBase64: string): Promise<any> {
+    return this.callTool('write_pty_input', {
+      session_id: sessionId,
+      data_base64: dataBase64,
+    }, undefined, 'interactive')
+  }
+
+  /**
+   * Read PTY output via long-poll. Bypasses the RequestLane to avoid
+   * blocking the interactive lane for up to 5 seconds per poll cycle.
+   */
+  async readPtyOutputDirect (sessionId: string, signal?: AbortSignal): Promise<any> {
+    return this.executeRequest({
+      jsonrpc: '2.0',
+      id: `pty-read-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      method: 'tools/call',
+      params: {
+        name: 'read_pty_output',
+        arguments: { session_id: sessionId, timeout_ms: 5000 },
+      },
+    }, signal)
+  }
+
+  async resizePty (sessionId: string, cols: number, rows: number): Promise<any> {
+    return this.callTool('resize_pty', {
+      session_id: sessionId,
+      cols,
+      rows,
+    }, undefined, 'interactive')
+  }
+
+  async closePtySession (sessionId: string): Promise<any> {
+    return this.callTool('close_pty_session', {
+      session_id: sessionId,
+    }, undefined, 'interactive')
+  }
+
   async listDirectory (path: string, asRoot: boolean): Promise<any> {
     return this.callTool('list_directory', { path, as_root: asRoot }, undefined, 'interactive')
   }

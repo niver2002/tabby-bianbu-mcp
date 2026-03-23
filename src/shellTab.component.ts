@@ -3,6 +3,7 @@ import { BaseSession, BaseTerminalTabComponent } from 'tabby-terminal'
 import { NotificationsService } from 'tabby-core'
 import { BianbuMcpService } from './mcp.service'
 import { BianbuShellSession } from './shellSession'
+import { BianbuPtySession } from './ptySession'
 import { BianbuCloudProfile } from './profileProvider'
 
 /** @hidden */
@@ -42,9 +43,28 @@ export class BianbuCloudShellTabComponent extends BaseTerminalTabComponent<any> 
   }
 
   protected async onFrontendReady (): Promise<void> {
-    const session = new BianbuShellSession(this.logger, this.mcp)
-    this.setSession(session as BaseSession, true)
-    await session.start({ cwd: this.cwd, asRoot: this.asRoot })
+    let session: BaseSession
+
+    // Check if remote supports real PTY sessions
+    const health = await this.mcp.getHealth().catch(() => null)
+
+    if (health?.supports?.ptySession) {
+      const pty = new BianbuPtySession(this.logger, this.mcp)
+      session = pty as BaseSession
+      this.setSession(session, true)
+      await pty.start({
+        cwd: this.cwd,
+        asRoot: this.asRoot,
+        cols: this.size?.columns || 80,
+        rows: this.size?.rows || 24,
+      })
+    } else {
+      const shell = new BianbuShellSession(this.logger, this.mcp)
+      session = shell as BaseSession
+      this.setSession(session, true)
+      await shell.start({ cwd: this.cwd, asRoot: this.asRoot })
+    }
+
     session.releaseInitialDataBuffer()
     this.localNotifications.notice('Bianbu Cloud shell ready')
     await super.onFrontendReady()

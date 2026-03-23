@@ -2,6 +2,28 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.8.0] - 2026-03-23
+
+### Added (Remote MCP Server v1.4.0)
+- **real PTY terminal sessions**: 5 new MCP tools (`open_pty_session`, `write_pty_input`, `read_pty_output`, `resize_pty`, `close_pty_session`) backed by a Python PTY helper using the standard library `pty` module — enables full interactive terminals (vim, htop, claude CLI, etc.)
+- **long-polling output**: `read_pty_output` holds the request up to 5s (configurable `timeout_ms`) until data arrives, achieving near-instant output delivery with minimal request overhead (~0.2 req/s idle vs 20 req/s with short polling)
+- **PTY session concurrency cap**: `MAX_PTY_SESSIONS` (default 4) limits simultaneous PTY sessions
+- **`pty_session` capability flag** in health `supports` for client feature detection
+
+### Changed (Remote MCP Server v1.4.0)
+- script version bumped to 1.4.0, server version bumped to 1.4.0
+- `gracefulShutdown` now cleans up PTY sessions
+- idle session sweeper now covers PTY sessions
+
+### Added (Plugin)
+- **`BianbuPtySession`**: new session class extending Tabby's `BaseSession` with 16ms input batching, long-poll output loop, and automatic resize forwarding
+- **PTY auto-detection**: shell tab checks remote `supports.ptySession` and automatically uses real PTY mode when available, falling back to the existing command-based `BianbuShellSession`
+- **PTY lane bypass**: `readPtyOutputDirect()` calls `executeRequest` directly instead of going through the interactive RequestLane, preventing 5s long-polls from blocking other operations
+- PTY capability indicator (`pty=✓/✗`) in the settings diagnostics panel
+
+### Changed (Plugin)
+- bundled remote installer updated to script v1.4.0 / server v1.4.0
+
 ## [0.7.0] - 2026-03-23
 
 ### Added (Remote MCP Server v1.3.0)

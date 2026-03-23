@@ -41,6 +41,7 @@ export interface RemoteHealthInfo {
     shellSession: boolean
     rateLimiting: boolean
     isoTimestamps: boolean
+    ptySession: boolean
   }
   tools: string[]
   transportMode: string | null
@@ -189,6 +190,7 @@ export function parseRemoteHealth (raw: any): RemoteHealthInfo {
     parallelChunkOffsets: Boolean(payload?.supports?.parallel_chunk_offsets),
     rateLimiting: Boolean(payload?.supports?.rate_limiting),
     isoTimestamps: Boolean(payload?.supports?.iso_timestamps),
+    ptySession: Boolean(payload?.supports?.pty_session) || tools.includes('open_pty_session'),
   }
 
   return {

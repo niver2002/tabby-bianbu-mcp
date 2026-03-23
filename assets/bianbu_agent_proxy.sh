@@ -4,8 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="${SCRIPT_VERSION:-1.3.0}"
-SERVER_VERSION="${SERVER_VERSION:-1.3.0}"
+SCRIPT_VERSION="${SCRIPT_VERSION:-1.4.0}"
+SERVER_VERSION="${SERVER_VERSION:-1.4.0}"
 APP_NAME="bianbu-mcp-server"
 INSTALL_ROOT="/opt/${APP_NAME}"
 APP_FILE="${INSTALL_ROOT}/server.mjs"
@@ -29,6 +29,7 @@ MAX_CONCURRENT_REQUESTS="${MAX_CONCURRENT_REQUESTS:-32}"
 MAX_UPLOAD_SESSIONS="${MAX_UPLOAD_SESSIONS:-16}"
 MAX_DOWNLOAD_SESSIONS="${MAX_DOWNLOAD_SESSIONS:-16}"
 MAX_SHELL_SESSIONS="${MAX_SHELL_SESSIONS:-8}"
+MAX_PTY_SESSIONS="${MAX_PTY_SESSIONS:-4}"
 TLS_CERT_FILE="${TLS_CERT_FILE:-}"
 TLS_KEY_FILE="${TLS_KEY_FILE:-}"
 MCP_TRANSPORT_MODE="${MCP_TRANSPORT_MODE:-stateless}"
@@ -91,6 +92,7 @@ MCP tools:
   - delete_path
   - rename_path
   - open_shell_session / exec_shell_session / close_shell_session
+  - open_pty_session / write_pty_input / read_pty_output / resize_pty / close_pty_session
   - upload_chunked_begin / upload_chunked_part / upload_chunked_finish / upload_chunked_abort
   - download_chunked_begin / download_chunked_part / download_chunked_close
 
@@ -110,6 +112,7 @@ MCP tools:
   MAX_UPLOAD_SESSIONS    最大并发上传会话数，默认: ${MAX_UPLOAD_SESSIONS}
   MAX_DOWNLOAD_SESSIONS  最大并发下载会话数，默认: ${MAX_DOWNLOAD_SESSIONS}
   MAX_SHELL_SESSIONS     最大并发 Shell 会话数，默认: ${MAX_SHELL_SESSIONS}
+  MAX_PTY_SESSIONS       最大并发 PTY 会话数，默认: ${MAX_PTY_SESSIONS}
   TLS_CERT_FILE          可选，HTTPS 证书路径
   TLS_KEY_FILE           可选，HTTPS 私钥路径
 
@@ -377,7 +380,7 @@ write_app() {
   local app_file="${1:-$APP_FILE}"
   write_root_file "$app_file" 755 <<'EOF'
 import { randomBytes, randomUUID } from 'node:crypto';
-import { exec as execCb } from 'node:child_process';
+import { exec as execCb, spawn as spawnCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -408,6 +411,11 @@ const SUPPORTED_TOOLS = [
   'open_shell_session',
   'exec_shell_session',
   'close_shell_session',
+  'open_pty_session',
+  'write_pty_input',
+  'read_pty_output',
+  'resize_pty',
+  'close_pty_session',
   'upload_chunked_begin',
   'upload_chunked_part',
   'upload_chunked_finish',
@@ -434,11 +442,14 @@ const MAX_CONCURRENT_REQUESTS = Number(process.env.MAX_CONCURRENT_REQUESTS || '3
 const MAX_UPLOAD_SESSIONS = Number(process.env.MAX_UPLOAD_SESSIONS || '16');
 const MAX_DOWNLOAD_SESSIONS = Number(process.env.MAX_DOWNLOAD_SESSIONS || '16');
 const MAX_SHELL_SESSIONS = Number(process.env.MAX_SHELL_SESSIONS || '8');
+const MAX_PTY_SESSIONS = Number(process.env.MAX_PTY_SESSIONS || '4');
+const PTY_OUTPUT_BUFFER_MAX = 512 * 1024;
 const CANONICAL_FILE_ROOT = FILE_ROOT === '/' ? '/' : fs.realpathSync(FILE_ROOT);
 const HAS_SUDO = fs.existsSync('/usr/bin/sudo') || fs.existsSync('/bin/sudo');
 const shellSessions = new Map();
 const uploadSessions = new Map();
 const downloadSessions = new Map();
+const ptySessions = new Map();
 const SESSION_IDLE_MS = 60 * 60 * 1000;
 const SERVER_START_TIME = Date.now();
 let activeRequests = 0;
@@ -731,6 +742,249 @@ async function cleanupUploadSession(session) {
   await deleteAnyPath(session.temp_dir, true, session.as_root).catch(() => {});
 }
 
+function ptyHelperScript() {
+  return String.raw`#!/usr/bin/env python3
+import pty, os, sys, select, signal, struct, fcntl, termios, json, base64
+
+def set_winsize(fd, rows, cols):
+    winsize = struct.pack('HHHH', rows, cols, 0, 0)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
+
+def send_msg(msg):
+    sys.stdout.write(json.dumps(msg, ensure_ascii=False) + '\n')
+    sys.stdout.flush()
+
+config = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
+initial_cols = config.get('cols', 80)
+initial_rows = config.get('rows', 24)
+shell = config.get('shell', '/bin/bash')
+cwd = config.get('cwd', '/')
+env_override = config.get('env', {})
+
+master_fd, slave_fd = pty.openpty()
+set_winsize(slave_fd, initial_rows, initial_cols)
+
+pid = os.fork()
+if pid == 0:
+    os.close(master_fd)
+    os.setsid()
+    fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+    os.dup2(slave_fd, 0)
+    os.dup2(slave_fd, 1)
+    os.dup2(slave_fd, 2)
+    if slave_fd > 2:
+        os.close(slave_fd)
+    try:
+        os.chdir(cwd)
+    except OSError:
+        pass
+    env = os.environ.copy()
+    env['TERM'] = 'xterm-256color'
+    env['COLUMNS'] = str(initial_cols)
+    env['LINES'] = str(initial_rows)
+    env.update(env_override)
+    os.execvpe(shell, [shell, '-l'], env)
+else:
+    os.close(slave_fd)
+    flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+    fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+    stdin_fd = sys.stdin.fileno()
+    old_stdin_flags = fcntl.fcntl(stdin_fd, fcntl.F_GETFL)
+    fcntl.fcntl(stdin_fd, fcntl.F_SETFL, old_stdin_flags | os.O_NONBLOCK)
+    running = True
+    def on_sigchld(signum, frame):
+        nonlocal running
+        running = False
+    signal.signal(signal.SIGCHLD, on_sigchld)
+    stdin_buf = b''
+    while running:
+        try:
+            readable, _, _ = select.select([master_fd, stdin_fd], [], [], 0.05)
+        except (select.error, InterruptedError, ValueError):
+            if not running:
+                break
+            continue
+        if master_fd in readable:
+            try:
+                data = os.read(master_fd, 65536)
+                if not data:
+                    break
+                send_msg({'type': 'output', 'data': base64.b64encode(data).decode('ascii')})
+            except OSError:
+                break
+        if stdin_fd in readable:
+            try:
+                chunk = os.read(stdin_fd, 65536)
+                if not chunk:
+                    break
+                stdin_buf += chunk
+                while b'\n' in stdin_buf:
+                    line, stdin_buf = stdin_buf.split(b'\n', 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        cmd = json.loads(line.decode('utf-8'))
+                        if cmd['type'] == 'input':
+                            raw = base64.b64decode(cmd['data'])
+                            os.write(master_fd, raw)
+                        elif cmd['type'] == 'resize':
+                            set_winsize(master_fd, cmd['rows'], cmd['cols'])
+                            try:
+                                os.kill(pid, signal.SIGWINCH)
+                            except OSError:
+                                pass
+                        elif cmd['type'] == 'close':
+                            running = False
+                            break
+                    except (json.JSONDecodeError, KeyError, OSError):
+                        pass
+            except OSError:
+                break
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    exit_code = -1
+    try:
+        for _ in range(50):
+            rpid, status = os.waitpid(pid, os.WNOHANG)
+            if rpid != 0:
+                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
+                break
+            import time; time.sleep(0.1)
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+            except OSError:
+                pass
+    except ChildProcessError:
+        pass
+    send_msg({'type': 'exit', 'code': exit_code})
+    os.close(master_fd)
+`;
+}
+
+let ptyHelperPath = '';
+async function ensurePtyHelper() {
+  if (!ptyHelperPath) {
+    ptyHelperPath = '/tmp/.mcp_pty_helper.py';
+    await fs.promises.writeFile(ptyHelperPath, ptyHelperScript(), { mode: 0o755 });
+  }
+}
+
+function createPtySession(id, cwd, asRoot, cols, rows) {
+  const config = { cols, rows, shell: '/bin/bash', cwd };
+  const encoded = Buffer.from(JSON.stringify(config), 'utf8').toString('base64');
+  const args = asRoot
+    ? ['-c', `sudo -n -- python3 ${ptyHelperPath} ${shellQuote(encoded)}`]
+    : ['-c', `python3 ${ptyHelperPath} ${shellQuote(encoded)}`];
+  const child = spawnCb('/bin/bash', args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: '/',
+  });
+  const session = {
+    id,
+    child,
+    outputBuffer: [],
+    outputBufferSize: 0,
+    alive: true,
+    asRoot,
+    cols,
+    rows,
+    exitCode: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    waiters: [],
+  };
+  let lineBuf = '';
+  child.stdout.on('data', (chunk) => {
+    lineBuf += chunk.toString();
+    let idx;
+    while ((idx = lineBuf.indexOf('\n')) >= 0) {
+      const line = lineBuf.slice(0, idx).trim();
+      lineBuf = lineBuf.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.type === 'output' && msg.data) {
+          const buf = Buffer.from(msg.data, 'base64');
+          session.outputBuffer.push(buf);
+          session.outputBufferSize += buf.length;
+          while (session.outputBufferSize > PTY_OUTPUT_BUFFER_MAX && session.outputBuffer.length > 1) {
+            const dropped = session.outputBuffer.shift();
+            session.outputBufferSize -= dropped.length;
+          }
+          session.updatedAt = Date.now();
+          // Wake any long-poll waiters
+          for (const waiter of session.waiters) {
+            waiter();
+          }
+          session.waiters = [];
+        } else if (msg.type === 'exit') {
+          session.alive = false;
+          session.exitCode = msg.code;
+          session.updatedAt = Date.now();
+          for (const waiter of session.waiters) {
+            waiter();
+          }
+          session.waiters = [];
+        }
+      } catch {}
+    }
+  });
+  child.stderr.on('data', () => {});
+  child.on('exit', () => {
+    session.alive = false;
+    session.updatedAt = Date.now();
+    for (const waiter of session.waiters) {
+      waiter();
+    }
+    session.waiters = [];
+  });
+  ptySessions.set(id, session);
+  return session;
+}
+
+function destroyPtySession(id) {
+  const session = ptySessions.get(id);
+  if (!session) return;
+  session.alive = false;
+  for (const waiter of session.waiters) {
+    waiter();
+  }
+  session.waiters = [];
+  try {
+    session.child.stdin.write(JSON.stringify({ type: 'close' }) + '\n');
+  } catch {}
+  setTimeout(() => {
+    try { session.child.kill('SIGKILL'); } catch {}
+  }, 3000).unref();
+  session.outputBuffer = [];
+  session.outputBufferSize = 0;
+  ptySessions.delete(id);
+}
+
+function drainPtyOutput(session) {
+  if (session.outputBuffer.length === 0) {
+    return {
+      data_base64: '',
+      alive: session.alive,
+      exit_code: session.alive ? undefined : session.exitCode,
+    };
+  }
+  const data = Buffer.concat(session.outputBuffer);
+  session.outputBuffer = [];
+  session.outputBufferSize = 0;
+  session.updatedAt = Date.now();
+  return {
+    data_base64: data.toString('base64'),
+    alive: session.alive,
+    exit_code: session.alive ? undefined : session.exitCode,
+  };
+}
+
 function sweepSessions() {
   const now = Date.now();
   for (const [id, entry] of shellSessions.entries()) {
@@ -747,6 +1001,11 @@ function sweepSessions() {
   for (const [id, entry] of downloadSessions.entries()) {
     if (now - entry.updatedAt > SESSION_IDLE_MS) {
       downloadSessions.delete(id);
+    }
+  }
+  for (const [id, entry] of ptySessions.entries()) {
+    if (now - entry.updatedAt > SESSION_IDLE_MS) {
+      destroyPtySession(id);
     }
   }
 }
@@ -920,11 +1179,13 @@ function makeServer() {
           shell: MAX_SHELL_SESSIONS,
           upload: MAX_UPLOAD_SESSIONS,
           download: MAX_DOWNLOAD_SESSIONS,
+          pty: MAX_PTY_SESSIONS,
         },
         active_sessions: {
           shell: shellSessions.size,
           upload: uploadSessions.size,
           download: downloadSessions.size,
+          pty: ptySessions.size,
         },
         concurrency: {
           max_concurrent_requests: MAX_CONCURRENT_REQUESTS,
@@ -951,6 +1212,7 @@ function makeServer() {
           shell_session: true,
           rate_limiting: true,
           iso_timestamps: true,
+          pty_session: true,
         },
       };
       return textResult(JSON.stringify(payload, null, 2), payload);
@@ -1279,6 +1541,134 @@ function makeServer() {
     },
     async ({ session_id }) => {
       shellSessions.delete(session_id);
+      const payload = { ok: true, session_id };
+      return textResult(JSON.stringify(payload, null, 2), payload);
+    },
+  );
+
+  // ── PTY session tools ──────────────────────────────────────────
+
+  server.registerTool(
+    'open_pty_session',
+    {
+      description: 'Open a real PTY shell session with streaming I/O. Use write_pty_input to send keystrokes and read_pty_output to receive terminal output.',
+      inputSchema: {
+        cwd: z.string().default('.'),
+        as_root: z.boolean().default(false),
+        cols: z.number().int().min(1).max(500).default(80),
+        rows: z.number().int().min(1).max(200).default(24),
+      },
+    },
+    async ({ cwd, as_root, cols, rows }) => {
+      if (ptySessions.size >= MAX_PTY_SESSIONS) {
+        throw new Error(`pty session limit reached (max ${MAX_PTY_SESSIONS})`);
+      }
+      const workingDirectory = await resolveRequestedPath(cwd, as_root);
+      const stat = await fs.promises.stat(workingDirectory).catch(() => null);
+      if (!stat || !stat.isDirectory()) {
+        throw new Error(`cwd not found or not a directory: ${workingDirectory}`);
+      }
+      await ensurePtyHelper();
+      const session_id = newSessionId('pty');
+      createPtySession(session_id, workingDirectory, as_root, cols, rows);
+      const payload = { session_id, cwd: workingDirectory, as_root, cols, rows };
+      return textResult(JSON.stringify(payload, null, 2), payload);
+    },
+  );
+
+  server.registerTool(
+    'write_pty_input',
+    {
+      description: 'Send raw terminal input (keystrokes) to a PTY session.',
+      inputSchema: {
+        session_id: z.string(),
+        data_base64: z.string(),
+      },
+    },
+    async ({ session_id, data_base64 }) => {
+      const session = ptySessions.get(session_id);
+      if (!session) throw new Error(`unknown pty session: ${session_id}`);
+      if (!session.alive) throw new Error(`pty session is no longer alive: ${session_id}`);
+      const msg = JSON.stringify({ type: 'input', data: data_base64 }) + '\n';
+      session.child.stdin.write(msg);
+      session.updatedAt = Date.now();
+      const payload = { ok: true, session_id };
+      return textResult(JSON.stringify(payload, null, 2), payload);
+    },
+  );
+
+  server.registerTool(
+    'read_pty_output',
+    {
+      description: 'Read buffered output from a PTY session. Supports long-polling: holds the request up to timeout_ms if no data is available yet.',
+      inputSchema: {
+        session_id: z.string(),
+        timeout_ms: z.number().int().min(0).max(10000).default(5000),
+      },
+    },
+    async ({ session_id, timeout_ms }) => {
+      const session = ptySessions.get(session_id);
+      if (!session) throw new Error(`unknown pty session: ${session_id}`);
+      session.updatedAt = Date.now();
+      // Immediate return if data or dead
+      if (session.outputBuffer.length > 0 || !session.alive) {
+        const payload = drainPtyOutput(session);
+        return textResult(JSON.stringify(payload, null, 2), payload);
+      }
+      // Long-poll: wait for data or timeout
+      const maxWait = Math.min(timeout_ms, 10000);
+      const result = await new Promise((resolve) => {
+        let resolved = false;
+        const finish = () => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timer);
+          const idx = session.waiters.indexOf(waiter);
+          if (idx >= 0) session.waiters.splice(idx, 1);
+          resolve(drainPtyOutput(session));
+        };
+        const waiter = finish;
+        session.waiters.push(waiter);
+        const timer = setTimeout(finish, maxWait);
+      });
+      return textResult(JSON.stringify(result, null, 2), result);
+    },
+  );
+
+  server.registerTool(
+    'resize_pty',
+    {
+      description: 'Resize a PTY session terminal.',
+      inputSchema: {
+        session_id: z.string(),
+        cols: z.number().int().min(1).max(500),
+        rows: z.number().int().min(1).max(200),
+      },
+    },
+    async ({ session_id, cols, rows }) => {
+      const session = ptySessions.get(session_id);
+      if (!session) throw new Error(`unknown pty session: ${session_id}`);
+      if (!session.alive) throw new Error(`pty session is no longer alive: ${session_id}`);
+      const msg = JSON.stringify({ type: 'resize', cols, rows }) + '\n';
+      session.child.stdin.write(msg);
+      session.cols = cols;
+      session.rows = rows;
+      session.updatedAt = Date.now();
+      const payload = { ok: true, session_id, cols, rows };
+      return textResult(JSON.stringify(payload, null, 2), payload);
+    },
+  );
+
+  server.registerTool(
+    'close_pty_session',
+    {
+      description: 'Close a PTY session.',
+      inputSchema: {
+        session_id: z.string(),
+      },
+    },
+    async ({ session_id }) => {
+      destroyPtySession(session_id);
       const payload = { ok: true, session_id };
       return textResult(JSON.stringify(payload, null, 2), payload);
     },
@@ -1694,6 +2084,9 @@ async function gracefulShutdown(signal) {
   }
   downloadSessions.clear();
   shellSessions.clear();
+  for (const [id] of ptySessions) {
+    destroyPtySession(id);
+  }
   await Promise.allSettled(cleanups);
   httpServer.close(() => {
     console.log('Server closed');
@@ -1795,6 +2188,7 @@ MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
 MAX_UPLOAD_SESSIONS=${MAX_UPLOAD_SESSIONS}
 MAX_DOWNLOAD_SESSIONS=${MAX_DOWNLOAD_SESSIONS}
 MAX_SHELL_SESSIONS=${MAX_SHELL_SESSIONS}
+MAX_PTY_SESSIONS=${MAX_PTY_SESSIONS}
 TLS_CERT_FILE=${TLS_CERT_FILE}
 TLS_KEY_FILE=${TLS_KEY_FILE}
 EOF
@@ -1969,6 +2363,7 @@ MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
 MAX_UPLOAD_SESSIONS=${MAX_UPLOAD_SESSIONS}
 MAX_DOWNLOAD_SESSIONS=${MAX_DOWNLOAD_SESSIONS}
 MAX_SHELL_SESSIONS=${MAX_SHELL_SESSIONS}
+MAX_PTY_SESSIONS=${MAX_PTY_SESSIONS}
 TLS_CERT_FILE=${TLS_CERT_FILE}
 TLS_KEY_FILE=${TLS_KEY_FILE}
 BACKUP_ROOT=${BACKUP_ROOT}
