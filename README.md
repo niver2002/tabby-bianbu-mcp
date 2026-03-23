@@ -164,7 +164,63 @@ Search for `tabby-bianbu-mcp` in **Settings → Plugins → Install from npm**
 
 ## 🚀 Quick Start / 快速上手
 
-### 1. Configure / 配置
+### 1. Get API Key / 获取 API 密钥
+
+<table>
+<tr><td width="50%">
+
+**English**: Log in to [Bianbu Cloud](https://cloud.bianbu.org) console, click your avatar (top-right) → **API Key** in the sidebar. Copy the full key.
+
+</td><td width="50%">
+
+**中文**: 登录 [算能板卡宇宙](https://cloud.bianbu.org) 控制台，点击右上角头像 → 左侧菜单 **API Key**，复制完整密钥。
+
+</td></tr>
+</table>
+
+<div align="center">
+<img src="docs/images/bianbu-console-overview.png" width="720" />
+<br/>
+<sub>控制台首页 — 点击右上角头像进入个人设置 / Console home — click avatar to enter profile settings</sub>
+<br/><br/>
+<img src="docs/images/bianbu-api-key.png" width="720" />
+<br/>
+<sub>侧栏点击 "API Key"，复制星号处的完整密钥 / Click "API Key" in sidebar, copy the full key</sub>
+</div>
+
+<br/>
+
+### 2. Get MCP URL / 获取 MCP 地址
+
+<table>
+<tr><td width="50%">
+
+**English**: On the console home page, click **"开始远程"** (Start Remote) on your instance card. In the popup, find the domain like `xxx.gdriscv.com`. Your MCP URL is:
+
+`https://<that-domain>/mcp`
+
+In the plugin settings, you only need to paste the domain part (without `https://` or `/mcp`).
+
+</td><td width="50%">
+
+**中文**: 在控制台首页，点击实例卡片上的 **"开始远程"**。在弹窗中找到类似 `xxx.gdriscv.com` 的域名。你的 MCP 地址是：
+
+`https://<该域名>/mcp`
+
+在插件设置中，只需粘贴域名部分（不含 `https://` 和 `/mcp`）。
+
+</td></tr>
+</table>
+
+<div align="center">
+<img src="docs/images/bianbu-mcp-url.png" width="720" />
+<br/>
+<sub>点击"本地连接"，在 connect 行找到域名 / Click "本地连接", find the domain in the connect line</sub>
+</div>
+
+<br/>
+
+### 3. Configure Plugin / 配置插件
 
 Open **Settings → Bianbu MCP** in Tabby and fill in:
 
@@ -172,20 +228,20 @@ Open **Settings → Bianbu MCP** in Tabby and fill in:
 
 | Field / 字段 | Description / 说明 | Example / 示例 |
 |:---|:---|:---|
-| **MCP URL** | Your MCP endpoint / MCP 端点地址 | `https://your-domain.example.com/mcp` |
-| **X-API-KEY** | API key from Bianbu Cloud / API 密钥 | `your-api-key` |
-| **Profile Name** | Display name / 显示名称 | `bianbu` |
+| **Domain** | Paste domain only (no `https://`, no `/mcp`) / 只粘贴域名 | `xxx.gdriscv.com` |
+| **API Key** | Full key from step 1 / 第 1 步复制的完整密钥 | `your-api-key` |
+| **Name** | Display name / 显示名称 | `bianbu` |
 
-### 2. Connect / 连接
+### 4. Connect / 连接
 
-Click **"Test Connection"** to verify. Then use:
+Click **"Test connection"** to verify. Then use:
 
 点击 **"Test connection"** 验证。然后使用：
 
-- **"Open Bianbu Cloud Shell"** — for terminal access / 打开终端
-- **"Open Bianbu Cloud Files"** — for file management / 打开文件管理器
+- **"Open Shell"** — for terminal access / 打开终端
+- **"Open Files"** — for file management / 打开文件管理器
 
-### 3. MCP Snippet / MCP 配置片段
+### 5. MCP Snippet / MCP 配置片段
 
 Copy the auto-generated JSON config for other MCP clients:
 
@@ -219,15 +275,16 @@ Copy the auto-generated JSON config for other MCP clients:
 | Key / 键 | Default / 默认值 | Description (EN) | 说明 (中文) |
 |:---|:---|:---|:---|
 | `name` | `bianbu` | Profile display name | 配置显示名称 |
-| `url` | *(empty)* | MCP endpoint URL | MCP 端点 URL |
+| `domain` | *(empty)* | MCP domain (without `https://` or `/mcp`) | MCP 域名（不含 `https://` 和 `/mcp`） |
 | `apiKey` | *(empty)* | `X-API-KEY` header value | API 密钥 |
 | `interactiveConcurrency` | `2` | Interactive request slots | 交互请求并发槽位数 |
 | `transferConcurrency` | `30` | Transfer request slots | 传输请求并发槽位数 |
-| `workerCadenceMs` | `100` | Dispatch cycle interval (ms) | 调度周期间隔 (毫秒) |
+| `maxConcurrentFiles` | `3` | Max parallel file transfers | 最大并行文件传输数 |
+| `workerCadenceMs` | `0` | Dispatch cycle interval (ms); adaptive throttling auto-adjusts | 调度周期间隔 (毫秒)；自适应节流自动调整 |
 | `maxRetries` | `2` | Max retry attempts | 最大重试次数 |
 | `retryBaseMs` | `1000` | Base delay between retries (ms) | 重试基础间隔 (毫秒) |
-| `uploadChunkBytes` | `32768` | Upload chunk size (bytes) | 上传分块大小 (字节) |
-| `downloadChunkBytes` | `131072` | Download chunk size (bytes) | 下载分块大小 (字节) |
+| `uploadChunkBytes` | `65536` | Upload chunk size (bytes) | 上传分块大小 (字节) |
+| `downloadChunkBytes` | `262144` | Download chunk size (bytes) | 下载分块大小 (字节) |
 | `notes` | *(empty)* | User notes | 用户备注 |
 | `installerRemotePath` | `/tmp/bianbu_agent_proxy.sh` | Remote installer path | 远端安装脚本路径 |
 | `maintenanceAsRoot` | `true` | Run maintenance as root | 以 root 执行维护 |
