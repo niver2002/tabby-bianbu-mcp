@@ -2,6 +2,11 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.8.5] - 2026-03-23
+
+### Fixed
+- **Installer upload E2BIG**: switched `pushInstallerAndUpgrade` from `writeTextFile` (single 88KB JSON-RPC payload) to chunked upload (32KB chunks), fixing `spawn E2BIG` on repair/upgrade
+
 ## [0.8.4] - 2026-03-23
 
 ### Changed (Remote MCP Server v1.5.0)

@@ -624,6 +624,26 @@ export class BianbuMcpService {
     return this.callTool('upload_chunked_abort', { upload_id: uploadId }, undefined, 'transfer')
   }
 
+  async uploadTextViaChunked (path: string, text: string, asRoot: boolean): Promise<void> {
+    const buf = Buffer.from(text, 'utf-8')
+    const chunkSize = 32 * 1024
+    const begin = await this.uploadChunkedBegin(path, asRoot, buf.length, chunkSize)
+    const uploadId = begin?.upload_id
+    if (!uploadId) {
+      throw new Error('upload_chunked_begin did not return an upload_id')
+    }
+    try {
+      for (let offset = 0; offset < buf.length; offset += chunkSize) {
+        const chunk = buf.subarray(offset, offset + chunkSize)
+        await this.uploadChunkedPart(uploadId, chunk.toString('base64'), offset)
+      }
+      await this.uploadChunkedFinish(uploadId)
+    } catch (err) {
+      await this.uploadChunkedAbort(uploadId).catch(() => {})
+      throw err
+    }
+  }
+
   async downloadBinaryFile (path: string, asRoot: boolean, signal?: AbortSignal): Promise<any> {
     return this.callTool('download_binary_file', {
       path,
@@ -758,7 +778,7 @@ export class BianbuMcpService {
 
     try {
       this.logSession(session, 'info', 'Uploading bundled installer to remote host', remotePath)
-      await this.writeTextFile(remotePath, installer.script, asRoot)
+      await this.uploadTextViaChunked(remotePath, installer.script, asRoot)
       const start = await this.runCommand(buildDetachedInstallerCommand(remotePath, action, logPath, statusPath, session.sessionName), '.', 30, asRoot)
       this.logSession(session, 'info', 'Detached installer command launched', JSON.stringify(start, null, 2))
       const { health, status } = await this.waitForInstallerCompletion({

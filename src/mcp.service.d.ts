@@ -70,6 +70,7 @@ export declare class BianbuMcpService {
     uploadChunkedPart(uploadId: string, contentBase64: string, offset?: number, signal?: AbortSignal): Promise<any>;
     uploadChunkedFinish(uploadId: string): Promise<any>;
     uploadChunkedAbort(uploadId: string): Promise<any>;
+    uploadTextViaChunked(path: string, text: string, asRoot: boolean): Promise<void>;
     downloadBinaryFile(path: string, asRoot: boolean, signal?: AbortSignal): Promise<any>;
     downloadChunkedBegin(path: string, asRoot: boolean, chunkBytes?: number): Promise<any>;
     downloadChunkedPart(downloadId: string, offset?: number, chunkBytes?: number, signal?: AbortSignal): Promise<any>;
