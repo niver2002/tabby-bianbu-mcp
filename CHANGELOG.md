@@ -2,6 +2,25 @@
 
 All notable changes to `tabby-bianbu-mcp` will be documented in this file.
 
+## [0.7.0] - 2026-03-23
+
+### Added (Remote MCP Server v1.3.0)
+- **server-side rate limiting**: returns HTTP 429 with `Retry-After` header when concurrent requests exceed `MAX_CONCURRENT_REQUESTS` (default 32), enabling client-side adaptive throttling
+- **session concurrency caps**: configurable limits for shell (`MAX_SHELL_SESSIONS=8`), upload (`MAX_UPLOAD_SESSIONS=16`), and download (`MAX_DOWNLOAD_SESSIONS=16`) sessions — prevents resource exhaustion under parallel transfers
+- **ISO 8601 timestamps**: `list_directory`, `fileStat`, and all file operations now return ISO date strings (e.g. `2026-03-23T12:34:56.789Z`) instead of Unix epoch seconds — directly consumable by the client's `formatDate()`
+- **enhanced health endpoint**: now reports `active_sessions` counts, `concurrency` stats (active/total/throttled requests), `uptime_seconds`, `memory` usage (RSS/heap), `node_version`, and `platform` info
+- **graceful shutdown**: SIGINT/SIGTERM now drain active requests, clean up upload temp directories, and close the HTTP server cleanly before exit
+- **`rate_limiting` and `iso_timestamps` capability flags** in health `supports` object for client feature detection
+
+### Changed (Remote MCP Server v1.3.0)
+- `logical_session_limits` in health response now reports actual configured caps instead of `null`
+- `exec_shell_session` response now includes `session_cwd` for the client to track the working directory
+- removed dead `registerStatefulSession()` function (was never called)
+- script version bumped to 1.3.0, server version bumped to 1.3.0
+
+### Changed (Plugin)
+- bundled remote installer updated to script v1.3.0 / server v1.3.0
+
 ## [0.6.1] - 2026-03-23
 
 ### Fixed

@@ -58,7 +58,7 @@ div(style='padding:20px;display:flex;flex-direction:column;gap:16px;font-family:
       div(*ngIf='remoteHealth', style='margin-top:8px;font-size:11px;opacity:.5')
         div FILE_ROOT: {{ remoteHealth.fileRoot || 'unknown' }}
         div Bundled installer: script={{ bundledInstaller?.scriptVersion || '?' }} server={{ bundledInstaller?.serverVersion || '?' }}
-        div Capabilities: rename={{ remoteHealth.supports?.renamePath ? '✓' : '✗' }} shell={{ remoteHealth.supports?.shellSession ? '✓' : '✗' }} chunked={{ remoteHealth.supports?.chunkedTransfers ? '✓' : '✗' }} parallel={{ remoteHealth.supports?.parallelChunkOffsets ? '✓' : '✗' }}
+        div Capabilities: rename={{ remoteHealth.supports?.renamePath ? '✓' : '✗' }} shell={{ remoteHealth.supports?.shellSession ? '✓' : '✗' }} chunked={{ remoteHealth.supports?.chunkedTransfers ? '✓' : '✗' }} parallel={{ remoteHealth.supports?.parallelChunkOffsets ? '✓' : '✗' }} ratelimit={{ remoteHealth.supports?.rateLimiting ? '✓' : '✗' }}
 
       //- Maintenance settings
       .grid(style='display:grid;grid-template-columns:160px 1fr;gap:8px;align-items:center;margin-top:12px;font-size:12px')

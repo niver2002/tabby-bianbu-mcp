@@ -32,6 +32,8 @@ export interface RemoteHealthInfo {
         parallelChunkOffsets: boolean;
         renamePath: boolean;
         shellSession: boolean;
+        rateLimiting: boolean;
+        isoTimestamps: boolean;
     };
     tools: string[];
     transportMode: string | null;

@@ -39,6 +39,8 @@ export interface RemoteHealthInfo {
     parallelChunkOffsets: boolean
     renamePath: boolean
     shellSession: boolean
+    rateLimiting: boolean
+    isoTimestamps: boolean
   }
   tools: string[]
   transportMode: string | null
@@ -185,6 +187,8 @@ export function parseRemoteHealth (raw: any): RemoteHealthInfo {
     shellSession: Boolean(payload?.supports?.shell_session) || tools.includes('open_shell_session'),
     chunkedTransfers: Boolean(payload?.supports?.chunked_transfers) || (tools.includes('upload_chunked_begin') && tools.includes('download_chunked_begin')),
     parallelChunkOffsets: Boolean(payload?.supports?.parallel_chunk_offsets),
+    rateLimiting: Boolean(payload?.supports?.rate_limiting),
+    isoTimestamps: Boolean(payload?.supports?.iso_timestamps),
   }
 
   return {

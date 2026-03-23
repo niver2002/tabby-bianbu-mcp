@@ -4,8 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="${SCRIPT_VERSION:-1.2.2}"
-SERVER_VERSION="${SERVER_VERSION:-1.2.0}"
+SCRIPT_VERSION="${SCRIPT_VERSION:-1.3.0}"
+SERVER_VERSION="${SERVER_VERSION:-1.3.0}"
 APP_NAME="bianbu-mcp-server"
 INSTALL_ROOT="/opt/${APP_NAME}"
 APP_FILE="${INSTALL_ROOT}/server.mjs"
@@ -25,6 +25,10 @@ ENABLE_PASSWORDLESS_SUDO="${ENABLE_PASSWORDLESS_SUDO:-false}"
 MAX_FILE_MB="${MAX_FILE_MB:-64}"
 MAX_COMMAND_OUTPUT_KB="${MAX_COMMAND_OUTPUT_KB:-256}"
 MAX_REQUEST_BODY_MB="${MAX_REQUEST_BODY_MB:-8}"
+MAX_CONCURRENT_REQUESTS="${MAX_CONCURRENT_REQUESTS:-32}"
+MAX_UPLOAD_SESSIONS="${MAX_UPLOAD_SESSIONS:-16}"
+MAX_DOWNLOAD_SESSIONS="${MAX_DOWNLOAD_SESSIONS:-16}"
+MAX_SHELL_SESSIONS="${MAX_SHELL_SESSIONS:-8}"
 TLS_CERT_FILE="${TLS_CERT_FILE:-}"
 TLS_KEY_FILE="${TLS_KEY_FILE:-}"
 MCP_TRANSPORT_MODE="${MCP_TRANSPORT_MODE:-stateless}"
@@ -102,6 +106,10 @@ MCP tools:
   MAX_FILE_MB            上传/下载单文件大小限制，默认: ${MAX_FILE_MB} MB
   MAX_COMMAND_OUTPUT_KB  命令输出截断上限，默认: ${MAX_COMMAND_OUTPUT_KB} KB
   MAX_REQUEST_BODY_MB    HTTP JSON 请求体上限，默认: ${MAX_REQUEST_BODY_MB} MB
+  MAX_CONCURRENT_REQUESTS 最大并发 MCP 请求数，超出返回 429，默认: ${MAX_CONCURRENT_REQUESTS}
+  MAX_UPLOAD_SESSIONS    最大并发上传会话数，默认: ${MAX_UPLOAD_SESSIONS}
+  MAX_DOWNLOAD_SESSIONS  最大并发下载会话数，默认: ${MAX_DOWNLOAD_SESSIONS}
+  MAX_SHELL_SESSIONS     最大并发 Shell 会话数，默认: ${MAX_SHELL_SESSIONS}
   TLS_CERT_FILE          可选，HTTPS 证书路径
   TLS_KEY_FILE           可选，HTTPS 私钥路径
 
@@ -371,6 +379,7 @@ write_app() {
 import { randomBytes, randomUUID } from 'node:crypto';
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
+import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -421,12 +430,20 @@ const EXPRESS_JSON_LIMIT = `${MAX_REQUEST_BODY_MB}mb`;
 const TLS_CERT_FILE = process.env.TLS_CERT_FILE || '';
 const TLS_KEY_FILE = process.env.TLS_KEY_FILE || '';
 const MCP_TRANSPORT_MODE = (process.env.MCP_TRANSPORT_MODE || 'stateless').toLowerCase();
+const MAX_CONCURRENT_REQUESTS = Number(process.env.MAX_CONCURRENT_REQUESTS || '32');
+const MAX_UPLOAD_SESSIONS = Number(process.env.MAX_UPLOAD_SESSIONS || '16');
+const MAX_DOWNLOAD_SESSIONS = Number(process.env.MAX_DOWNLOAD_SESSIONS || '16');
+const MAX_SHELL_SESSIONS = Number(process.env.MAX_SHELL_SESSIONS || '8');
 const CANONICAL_FILE_ROOT = FILE_ROOT === '/' ? '/' : fs.realpathSync(FILE_ROOT);
 const HAS_SUDO = fs.existsSync('/usr/bin/sudo') || fs.existsSync('/bin/sudo');
 const shellSessions = new Map();
 const uploadSessions = new Map();
 const downloadSessions = new Map();
 const SESSION_IDLE_MS = 60 * 60 * 1000;
+const SERVER_START_TIME = Date.now();
+let activeRequests = 0;
+let totalRequests = 0;
+let throttledRequests = 0;
 
 if (!['stateless', 'stateful'].includes(MCP_TRANSPORT_MODE)) {
   throw new Error(`Unsupported MCP_TRANSPORT_MODE: ${MCP_TRANSPORT_MODE}`);
@@ -458,6 +475,7 @@ function shellQuote(value) {
 
 function rootHelperScript() {
   return String.raw`import base64, json, os, shutil, stat, sys, tempfile
+from datetime import datetime, timezone
 payload = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
 op = payload['op']
 target = payload.get('path', '')
@@ -467,7 +485,7 @@ def stat_dict(p):
     return {
         'path': p,
         'size': st.st_size,
-        'modified': int(st.st_mtime),
+        'modified': datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
         'is_dir': stat.S_ISDIR(st.st_mode),
         'is_file': stat.S_ISREG(st.st_mode),
     }
@@ -696,7 +714,7 @@ async function fileStat(target) {
   return {
     path: target,
     size: stat.size,
-    modified: Math.floor(stat.mtimeMs / 1000),
+    modified: new Date(stat.mtimeMs).toISOString(),
     is_dir: stat.isDirectory(),
     is_file: stat.isFile(),
   };
@@ -859,7 +877,7 @@ async function readBinaryChunk(target, offset, chunkBytes, asRoot) {
     return {
       path: target,
       size: stat.size,
-      modified: Math.floor(stat.mtimeMs / 1000),
+      modified: new Date(stat.mtimeMs).toISOString(),
       is_dir: stat.isDirectory(),
       is_file: stat.isFile(),
       offset,
@@ -885,6 +903,7 @@ function makeServer() {
     'health',
     { description: 'Return basic MCP server health information.' },
     async () => {
+      const mem = process.memoryUsage();
       const payload = {
         ok: true,
         listen: `${HOST}:${PORT}${MCP_PATH}`,
@@ -898,10 +917,29 @@ function makeServer() {
         passwordless_sudo_expected: ENABLE_PASSWORDLESS_SUDO,
         session_idle_ms: SESSION_IDLE_MS,
         logical_session_limits: {
-          shell: null,
-          upload: null,
-          download: null,
+          shell: MAX_SHELL_SESSIONS,
+          upload: MAX_UPLOAD_SESSIONS,
+          download: MAX_DOWNLOAD_SESSIONS,
         },
+        active_sessions: {
+          shell: shellSessions.size,
+          upload: uploadSessions.size,
+          download: downloadSessions.size,
+        },
+        concurrency: {
+          max_concurrent_requests: MAX_CONCURRENT_REQUESTS,
+          active_requests: activeRequests,
+          total_requests: totalRequests,
+          throttled_requests: throttledRequests,
+        },
+        uptime_seconds: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
+        memory: {
+          rss_mb: Math.round(mem.rss / 1048576 * 10) / 10,
+          heap_used_mb: Math.round(mem.heapUsed / 1048576 * 10) / 10,
+          heap_total_mb: Math.round(mem.heapTotal / 1048576 * 10) / 10,
+        },
+        node_version: process.version,
+        platform: `${os.platform()} ${os.release()} ${os.arch()}`,
         script_version: INSTALLER_SCRIPT_VERSION,
         server_version: SERVER_VERSION,
         service_name: 'bianbu-mcp-server',
@@ -911,6 +949,8 @@ function makeServer() {
           parallel_chunk_offsets: true,
           rename_path: true,
           shell_session: true,
+          rate_limiting: true,
+          iso_timestamps: true,
         },
       };
       return textResult(JSON.stringify(payload, null, 2), payload);
@@ -1186,6 +1226,9 @@ function makeServer() {
       },
     },
     async ({ cwd, as_root }) => {
+      if (shellSessions.size >= MAX_SHELL_SESSIONS) {
+        throw new Error(`shell session limit reached (max ${MAX_SHELL_SESSIONS})`);
+      }
       const workingDirectory = await resolveRequestedPath(cwd, as_root);
       const stat = await fs.promises.stat(workingDirectory).catch(() => null);
       if (!stat || !stat.isDirectory()) {
@@ -1221,6 +1264,7 @@ function makeServer() {
       session.cwd = payload.cwd || session.cwd;
       session.updatedAt = Date.now();
       payload.session_id = session_id;
+      payload.session_cwd = session.cwd;
       return textResult(JSON.stringify(payload, null, 2), payload);
     },
   );
@@ -1253,6 +1297,9 @@ function makeServer() {
       },
     },
     async ({ path: inputPath, overwrite, total_size, chunk_bytes, as_root }) => {
+      if (uploadSessions.size >= MAX_UPLOAD_SESSIONS) {
+        throw new Error(`upload session limit reached (max ${MAX_UPLOAD_SESSIONS})`);
+      }
       const target = await resolveRequestedPath(inputPath, as_root);
       const targetExists = await statAnyPath(target, as_root).then(() => true).catch(() => false);
       if (!overwrite && targetExists) {
@@ -1369,6 +1416,9 @@ function makeServer() {
       },
     },
     async ({ path: inputPath, chunk_bytes, as_root }) => {
+      if (downloadSessions.size >= MAX_DOWNLOAD_SESSIONS) {
+        throw new Error(`download session limit reached (max ${MAX_DOWNLOAD_SESSIONS})`);
+      }
       const target = await resolveRequestedPath(inputPath, as_root);
       const info = await statAnyPath(target, as_root);
       if (!info.is_file) {
@@ -1432,7 +1482,27 @@ app.use(express.json({ limit: EXPRESS_JSON_LIMIT }));
 const transports = new Map();
 const servers = new Map();
 
+// Concurrency-based rate limiting middleware for MCP endpoint
+function rateLimitMiddleware(req, res, next) {
+  totalRequests++;
+  if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+    throttledRequests++;
+    res.setHeader('Retry-After', '1');
+    res.status(429).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: `Too many concurrent requests (limit: ${MAX_CONCURRENT_REQUESTS})` },
+      id: null,
+    });
+    return;
+  }
+  activeRequests++;
+  res.on('finish', () => { activeRequests--; });
+  res.on('close', () => { activeRequests = Math.max(0, activeRequests - 1); });
+  next();
+}
+
 app.get('/health', (_req, res) => {
+  const mem = process.memoryUsage();
   res.json({
     ok: true,
     listen: `${HOST}:${PORT}${MCP_PATH}`,
@@ -1441,10 +1511,28 @@ app.get('/health', (_req, res) => {
     max_request_body_bytes: MAX_REQUEST_BODY_BYTES,
     session_idle_ms: SESSION_IDLE_MS,
     logical_session_limits: {
-      shell: null,
-      upload: null,
-      download: null,
+      shell: MAX_SHELL_SESSIONS,
+      upload: MAX_UPLOAD_SESSIONS,
+      download: MAX_DOWNLOAD_SESSIONS,
     },
+    active_sessions: {
+      shell: shellSessions.size,
+      upload: uploadSessions.size,
+      download: downloadSessions.size,
+    },
+    concurrency: {
+      max_concurrent_requests: MAX_CONCURRENT_REQUESTS,
+      active_requests: activeRequests,
+      total_requests: totalRequests,
+      throttled_requests: throttledRequests,
+    },
+    uptime_seconds: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
+    memory: {
+      rss_mb: Math.round(mem.rss / 1048576 * 10) / 10,
+      heap_used_mb: Math.round(mem.heapUsed / 1048576 * 10) / 10,
+    },
+    node_version: process.version,
+    platform: `${os.platform()} ${os.release()} ${os.arch()}`,
     script_version: INSTALLER_SCRIPT_VERSION,
     server_version: SERVER_VERSION,
     tools: SUPPORTED_TOOLS,
@@ -1453,36 +1541,13 @@ app.get('/health', (_req, res) => {
       parallel_chunk_offsets: true,
       rename_path: true,
       shell_session: true,
+      rate_limiting: true,
+      iso_timestamps: true,
     },
   });
 });
 
-function registerStatefulSession(transport, server) {
-  transport.onclose = () => {
-    const sid = transport.sessionId;
-    if (sid) {
-      transports.delete(sid);
-      servers.delete(sid);
-    }
-  };
-
-  return new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-    enableJsonResponse: true,
-    onsessioninitialized: (sessionId) => {
-      transports.set(sessionId, transport);
-      servers.set(sessionId, server);
-    },
-    onsessionclosed: (sessionId) => {
-      if (sessionId) {
-        transports.delete(sessionId);
-        servers.delete(sessionId);
-      }
-    },
-  });
-}
-
-app.post(MCP_PATH, async (req, res) => {
+app.post(MCP_PATH, rateLimitMiddleware, async (req, res) => {
   try {
     if (MCP_TRANSPORT_MODE === 'stateless') {
       const server = makeServer();
@@ -1619,8 +1684,27 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-process.on('SIGINT', () => process.exit(0));
-process.on('SIGTERM', () => process.exit(0));
+async function gracefulShutdown(signal) {
+  console.log(`${signal} received, shutting down gracefully...`);
+  // Clean up upload sessions (remove temp dirs)
+  const cleanups = [];
+  for (const [id, session] of uploadSessions.entries()) {
+    cleanups.push(cleanupUploadSession(session).catch(() => {}));
+    uploadSessions.delete(id);
+  }
+  downloadSessions.clear();
+  shellSessions.clear();
+  await Promise.allSettled(cleanups);
+  httpServer.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+  // Force exit after 10 seconds
+  setTimeout(() => process.exit(0), 10000).unref();
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 EOF
   run_as_root python3 - "$app_file" "$SERVER_VERSION" "$SCRIPT_VERSION" <<'PY'
 from pathlib import Path
@@ -1707,6 +1791,10 @@ ENABLE_PASSWORDLESS_SUDO=${ENABLE_PASSWORDLESS_SUDO}
 MAX_FILE_MB=${MAX_FILE_MB}
 MAX_COMMAND_OUTPUT_KB=${MAX_COMMAND_OUTPUT_KB}
 MAX_REQUEST_BODY_MB=${MAX_REQUEST_BODY_MB}
+MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+MAX_UPLOAD_SESSIONS=${MAX_UPLOAD_SESSIONS}
+MAX_DOWNLOAD_SESSIONS=${MAX_DOWNLOAD_SESSIONS}
+MAX_SHELL_SESSIONS=${MAX_SHELL_SESSIONS}
 TLS_CERT_FILE=${TLS_CERT_FILE}
 TLS_KEY_FILE=${TLS_KEY_FILE}
 EOF
@@ -1876,6 +1964,11 @@ FILE_ROOT=${FILE_ROOT}
 ENABLE_PASSWORDLESS_SUDO=${ENABLE_PASSWORDLESS_SUDO}
 MAX_FILE_MB=${MAX_FILE_MB}
 MAX_COMMAND_OUTPUT_KB=${MAX_COMMAND_OUTPUT_KB}
+MAX_REQUEST_BODY_MB=${MAX_REQUEST_BODY_MB}
+MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+MAX_UPLOAD_SESSIONS=${MAX_UPLOAD_SESSIONS}
+MAX_DOWNLOAD_SESSIONS=${MAX_DOWNLOAD_SESSIONS}
+MAX_SHELL_SESSIONS=${MAX_SHELL_SESSIONS}
 TLS_CERT_FILE=${TLS_CERT_FILE}
 TLS_KEY_FILE=${TLS_KEY_FILE}
 BACKUP_ROOT=${BACKUP_ROOT}
